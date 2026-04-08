@@ -38,6 +38,15 @@ class Wupex_Import {
         $total_pages  = $this->total_api_pages;
         $markup       = (float) get_option( 'wupex_markup_percentage', 0 );
 
+        // Build a type → imageUrl fallback map from products that have images
+        $type_image_map = [];
+        foreach ( $products as $p ) {
+            $type = $p['productType'] ?? '';
+            if ( ! empty( $type ) && ! empty( $p['imageUrl'] ) && ! isset( $type_image_map[ $type ] ) ) {
+                $type_image_map[ $type ] = $p['imageUrl'];
+            }
+        }
+
         $base_url = admin_url( 'admin.php?page=wupex-import' );
         ?>
         <div class="wrap wupex-import-wrap">
@@ -92,9 +101,15 @@ class Wupex_Import {
                             <?php foreach ( $products as $product ) :
                                 $wupex_price = (float) ( $product['retailPrice'] ?? $product['price'] ?? 0 );
                                 $wc_price    = round( $wupex_price + ( $wupex_price * $markup / 100 ), 2 );
-                                $sku         = $product['productCode'] ?? '';
-                                $imported    = $this->is_already_imported( $sku );
-                                $image_url   = $product['imageUrl'] ?? '';
+                                $sku          = $product['productCode'] ?? '';
+                                $imported     = $this->is_already_imported( $sku );
+                                $image_url    = $product['imageUrl'] ?? '';
+                                $type         = $product['productType'] ?? '';
+                                $fallback_url = ( empty( $image_url ) && isset( $type_image_map[ $type ] ) )
+                                    ? $type_image_map[ $type ]
+                                    : '';
+                                $display_url  = ! empty( $image_url ) ? $image_url : $fallback_url;
+                                $is_fallback  = empty( $image_url ) && ! empty( $fallback_url );
                             ?>
                             <tr>
                                 <td class="check-column">
@@ -102,10 +117,11 @@ class Wupex_Import {
                                            value="<?php echo esc_attr( wp_json_encode( $product ) ); ?>" />
                                 </td>
                                 <td>
-                                    <?php if ( ! empty( $image_url ) ) : ?>
-                                        <img src="<?php echo esc_url( $image_url ); ?>"
+                                    <?php if ( ! empty( $display_url ) ) : ?>
+                                        <img src="<?php echo esc_url( $display_url ); ?>"
                                              width="50" height="50"
-                                             style="object-fit:cover; border-radius:3px;" />
+                                             style="object-fit:cover; border-radius:3px; <?php echo $is_fallback ? 'opacity:0.7;' : ''; ?>"
+                                             title="<?php echo $is_fallback ? esc_attr__( 'Shared image from same product type', 'wupex-gift-cards' ) : ''; ?>" />
                                     <?php else : ?>
                                         <div class="wupex-no-image">
                                             <span>&#128247;</span>
@@ -326,12 +342,27 @@ class Wupex_Import {
         $raw_products = isset( $_POST['products'] ) ? (array) $_POST['products'] : [];
         $imported = $skipped = $failed = 0;
 
+        // Build type → imageUrl map from the batch so we can fill gaps
+        $type_image_map = [];
+        foreach ( $raw_products as $raw ) {
+            $p = json_decode( wp_unslash( $raw ), true );
+            if ( $p && ! empty( $p['productType'] ) && ! empty( $p['imageUrl'] ) ) {
+                $type_image_map[ $p['productType'] ] ??= $p['imageUrl'];
+            }
+        }
+
         foreach ( $raw_products as $raw ) {
             $product = json_decode( wp_unslash( $raw ), true );
             if ( ! $product ) {
                 $failed++;
                 continue;
             }
+
+            // Fill missing imageUrl from same-type fallback
+            if ( empty( $product['imageUrl'] ) && ! empty( $product['productType'] ) ) {
+                $product['imageUrl'] = $type_image_map[ $product['productType'] ] ?? '';
+            }
+
             $result = $this->import_single_product( $product );
             match ( $result ) {
                 'imported' => $imported++,
