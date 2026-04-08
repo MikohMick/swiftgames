@@ -75,7 +75,7 @@ function wupex_init(): void {
 function wupex_enqueue_admin_assets( string $hook ): void {
     $allowed_hooks = [
         'woocommerce_page_wupex-gift-cards',
-        'wupex-gift-cards_page_wupex-import',
+        'woocommerce_page_wupex-import',
     ];
     if ( ! in_array( $hook, $allowed_hooks, true ) ) {
         return;

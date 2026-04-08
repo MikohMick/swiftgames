@@ -15,9 +15,9 @@ class Wupex_Import {
 
     public function register_submenu(): void {
         add_submenu_page(
-            'wupex-gift-cards',
-            __( 'Import Products', 'wupex-gift-cards' ),
-            __( 'Import Products', 'wupex-gift-cards' ),
+            'woocommerce',
+            __( 'Wupex Import Products', 'wupex-gift-cards' ),
+            __( 'Wupex Import Products', 'wupex-gift-cards' ),
             'manage_woocommerce',
             'wupex-import',
             [ $this, 'render_page' ]
