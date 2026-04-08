@@ -128,11 +128,14 @@
                     '<strong>' + d.failed  + '</strong> failed.' +
                     '</p></div>'
                 ).show();
+                // Reload after 2s so badge statuses update correctly
+                setTimeout(function () { window.location.reload(); }, 2000);
             } else {
                 text.text('Error.');
                 summary.html(
                     '<div class="notice notice-error inline"><p>' + resp.data.message + '</p></div>'
                 ).show();
+                btn.prop('disabled', false);
             }
         })
         .fail(function () {
