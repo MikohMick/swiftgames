@@ -57,6 +57,26 @@
     });
 
     // -------------------------------------------------------------------------
+    // Import page: Refresh Product List
+    // -------------------------------------------------------------------------
+    $(document).on('click', '#wupex-refresh-products', function () {
+        var btn = $(this);
+        btn.prop('disabled', true).text('Refreshing…');
+        $.post(wupexAdmin.ajax_url, {
+            action: 'wupex_refresh_products',
+            nonce:  wupexAdmin.nonce
+        })
+        .done(function (resp) {
+            if (resp.success) {
+                window.location.reload();
+            }
+        })
+        .always(function () {
+            btn.prop('disabled', false).text('Refresh Product List');
+        });
+    });
+
+    // -------------------------------------------------------------------------
     // Import page: Select All checkbox
     // -------------------------------------------------------------------------
     $(document).on('change', '#wupex-select-all', function () {

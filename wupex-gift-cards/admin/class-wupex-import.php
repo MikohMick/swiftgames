@@ -5,16 +5,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Wupex_Import {
 
-    private const PER_PAGE = 20; // Products shown per admin page
+    private const PER_PAGE     = 20;
+    private const CACHE_KEY    = 'wupex_product_cache';
+    private const CACHE_EXPIRY = 300; // 5 minutes
 
-    private string $last_fetch_error  = '';
-    private array  $last_raw_response = [];
-    private int    $total_api_pages   = 1;
+    private string $last_fetch_error = '';
 
     public function __construct() {
         add_action( 'admin_menu', [ $this, 'register_submenu' ] );
         add_action( 'wp_ajax_wupex_import_products', [ $this, 'ajax_import_products' ] );
         add_action( 'wp_ajax_wupex_sync_stock', [ $this, 'ajax_sync_stock' ] );
+        add_action( 'wp_ajax_wupex_refresh_products', [ $this, 'ajax_refresh_products' ] );
     }
 
     public function register_submenu(): void {
@@ -28,19 +29,27 @@ class Wupex_Import {
         );
     }
 
+    // -------------------------------------------------------------------------
+    // Render page
+    // -------------------------------------------------------------------------
+
     public function render_page(): void {
         if ( ! current_user_can( 'manage_woocommerce' ) ) {
             wp_die( esc_html__( 'Insufficient permissions.', 'wupex-gift-cards' ) );
         }
 
         $current_page = max( 1, (int) ( $_GET['paged'] ?? 1 ) );
-        $products     = $this->fetch_products_page( $current_page );
-        $total_pages  = $this->total_api_pages;
+        $all_products = $this->get_cached_products();
+        $total        = count( $all_products );
+        $total_pages  = max( 1, (int) ceil( $total / self::PER_PAGE ) );
+        $current_page = min( $current_page, $total_pages );
+        $offset       = ( $current_page - 1 ) * self::PER_PAGE;
+        $products     = array_slice( $all_products, $offset, self::PER_PAGE );
         $markup       = (float) get_option( 'wupex_markup_percentage', 0 );
 
-        // Build a type → imageUrl fallback map from products that have images
+        // Build type → imageUrl fallback from ALL cached products (not just current page)
         $type_image_map = [];
-        foreach ( $products as $p ) {
+        foreach ( $all_products as $p ) {
             $type = $p['productType'] ?? '';
             if ( ! empty( $type ) && ! empty( $p['imageUrl'] ) && ! isset( $type_image_map[ $type ] ) ) {
                 $type_image_map[ $type ] = $p['imageUrl'];
@@ -52,78 +61,88 @@ class Wupex_Import {
         <div class="wrap wupex-import-wrap">
             <h1><?php esc_html_e( 'Import Wupex Products', 'wupex-gift-cards' ); ?></h1>
 
-            <p>
+            <div class="tablenav top" style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
                 <button type="button" id="wupex-sync-stock" class="button button-secondary">
                     <?php esc_html_e( 'Sync Stock', 'wupex-gift-cards' ); ?>
                 </button>
-                <span id="wupex-sync-result" style="margin-left:10px;"></span>
-            </p>
+                <button type="button" id="wupex-refresh-products" class="button button-secondary">
+                    <?php esc_html_e( 'Refresh Product List', 'wupex-gift-cards' ); ?>
+                </button>
+                <span id="wupex-sync-result"></span>
+            </div>
 
-            <?php if ( ! empty( $products ) ) : ?>
+            <?php if ( ! empty( $this->last_fetch_error ) && empty( $products ) ) : ?>
+                <div class="notice notice-warning"><p>
+                    <strong><?php esc_html_e( 'Could not load products:', 'wupex-gift-cards' ); ?></strong>
+                    <?php echo esc_html( $this->last_fetch_error ); ?>
+                </p></div>
+
+            <?php elseif ( ! empty( $products ) ) : ?>
 
                 <form id="wupex-import-form">
                     <?php wp_nonce_field( 'wupex_admin_nonce', 'wupex_nonce' ); ?>
 
-                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-                        <div>
+                    <!-- Top tablenav -->
+                    <div class="tablenav top">
+                        <div class="alignleft actions">
                             <button type="button" id="wupex-import-selected" class="button button-primary">
                                 <?php esc_html_e( 'Import Selected', 'wupex-gift-cards' ); ?>
                             </button>
-                            <span style="margin-left:8px; color:#666; font-size:13px;">
-                                <?php
-                                printf(
-                                    esc_html__( 'Page %1$d of %2$d', 'wupex-gift-cards' ),
-                                    $current_page,
-                                    $total_pages
-                                );
-                                ?>
-                            </span>
                         </div>
-
-                        <?php $this->render_pagination( $current_page, $total_pages, $base_url ); ?>
+                        <div class="tablenav-pages">
+                            <span class="displaying-num">
+                                <?php printf(
+                                    esc_html( _n( '%s item', '%s items', $total, 'wupex-gift-cards' ) ),
+                                    number_format_i18n( $total )
+                                ); ?>
+                            </span>
+                            <?php $this->render_pagination( $current_page, $total_pages, $base_url ); ?>
+                        </div>
+                        <br class="clear" />
                     </div>
 
                     <table class="wp-list-table widefat fixed striped wupex-product-table">
                         <thead>
                             <tr>
-                                <th class="check-column"><input type="checkbox" id="wupex-select-all" /></th>
-                                <th style="width:70px;"><?php esc_html_e( 'Image', 'wupex-gift-cards' ); ?></th>
+                                <td class="manage-column column-cb check-column">
+                                    <input type="checkbox" id="wupex-select-all" />
+                                </td>
+                                <th style="width:64px;"><?php esc_html_e( 'Image', 'wupex-gift-cards' ); ?></th>
                                 <th><?php esc_html_e( 'Product Name', 'wupex-gift-cards' ); ?></th>
-                                <th style="width:160px;"><?php esc_html_e( 'SKU', 'wupex-gift-cards' ); ?></th>
-                                <th style="width:110px;"><?php esc_html_e( 'Wupex Price', 'wupex-gift-cards' ); ?></th>
-                                <th style="width:130px;"><?php esc_html_e( 'WC Price (+markup)', 'wupex-gift-cards' ); ?></th>
-                                <th style="width:70px;"><?php esc_html_e( 'Stock', 'wupex-gift-cards' ); ?></th>
-                                <th style="width:120px;"><?php esc_html_e( 'Type', 'wupex-gift-cards' ); ?></th>
-                                <th style="width:110px;"><?php esc_html_e( 'Status', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:155px;"><?php esc_html_e( 'SKU', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:100px;"><?php esc_html_e( 'Wupex Price', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:120px;"><?php esc_html_e( 'WC Price (+markup)', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:65px;"><?php esc_html_e( 'Stock', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:115px;"><?php esc_html_e( 'Type', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:105px;"><?php esc_html_e( 'Status', 'wupex-gift-cards' ); ?></th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ( $products as $product ) :
-                                $wupex_price = (float) ( $product['retailPrice'] ?? $product['price'] ?? 0 );
-                                $wc_price    = round( $wupex_price + ( $wupex_price * $markup / 100 ), 2 );
+                                $wupex_price  = (float) ( $product['retailPrice'] ?? $product['price'] ?? 0 );
+                                $wc_price     = round( $wupex_price + ( $wupex_price * $markup / 100 ), 2 );
                                 $sku          = $product['productCode'] ?? '';
                                 $imported     = $this->is_already_imported( $sku );
-                                $image_url    = $product['imageUrl'] ?? '';
                                 $type         = $product['productType'] ?? '';
+                                $image_url    = $product['imageUrl'] ?? '';
                                 $fallback_url = ( empty( $image_url ) && isset( $type_image_map[ $type ] ) )
-                                    ? $type_image_map[ $type ]
-                                    : '';
+                                                    ? $type_image_map[ $type ] : '';
                                 $display_url  = ! empty( $image_url ) ? $image_url : $fallback_url;
                                 $is_fallback  = empty( $image_url ) && ! empty( $fallback_url );
                             ?>
                             <tr>
-                                <td class="check-column">
+                                <th scope="row" class="check-column">
                                     <input type="checkbox" name="products[]"
                                            value="<?php echo esc_attr( wp_json_encode( $product ) ); ?>" />
-                                </td>
+                                </th>
                                 <td>
                                     <?php if ( ! empty( $display_url ) ) : ?>
                                         <img src="<?php echo esc_url( $display_url ); ?>"
                                              width="50" height="50"
-                                             style="object-fit:cover; border-radius:3px; <?php echo $is_fallback ? 'opacity:0.7;' : ''; ?>"
-                                             title="<?php echo $is_fallback ? esc_attr__( 'Shared image from same product type', 'wupex-gift-cards' ) : ''; ?>" />
+                                             style="object-fit:cover; border-radius:3px; <?php echo $is_fallback ? 'opacity:0.75;' : ''; ?>"
+                                             title="<?php echo $is_fallback ? esc_attr__( 'Shared image from same product type', 'wupex-gift-cards' ) : esc_attr( $product['productName'] ?? '' ); ?>" />
                                     <?php else : ?>
-                                        <div class="wupex-no-image">
+                                        <div class="wupex-no-image" title="<?php esc_attr_e( 'No image available', 'wupex-gift-cards' ); ?>">
                                             <span>&#128247;</span>
                                         </div>
                                     <?php endif; ?>
@@ -133,7 +152,7 @@ class Wupex_Import {
                                 <td><?php echo wp_kses_post( wc_price( $wupex_price ) ); ?></td>
                                 <td><?php echo wp_kses_post( wc_price( $wc_price ) ); ?></td>
                                 <td><?php echo esc_html( $product['available'] ?? 0 ); ?></td>
-                                <td><?php echo esc_html( $product['productType'] ?? '' ); ?></td>
+                                <td><?php echo esc_html( $type ); ?></td>
                                 <td>
                                     <?php if ( $imported ) : ?>
                                         <span class="wupex-badge wupex-badge-imported">
@@ -148,10 +167,40 @@ class Wupex_Import {
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
+                        <tfoot>
+                            <tr>
+                                <td class="manage-column column-cb check-column">
+                                    <input type="checkbox" />
+                                </td>
+                                <th style="width:64px;"><?php esc_html_e( 'Image', 'wupex-gift-cards' ); ?></th>
+                                <th><?php esc_html_e( 'Product Name', 'wupex-gift-cards' ); ?></th>
+                                <th><?php esc_html_e( 'SKU', 'wupex-gift-cards' ); ?></th>
+                                <th><?php esc_html_e( 'Wupex Price', 'wupex-gift-cards' ); ?></th>
+                                <th><?php esc_html_e( 'WC Price (+markup)', 'wupex-gift-cards' ); ?></th>
+                                <th><?php esc_html_e( 'Stock', 'wupex-gift-cards' ); ?></th>
+                                <th><?php esc_html_e( 'Type', 'wupex-gift-cards' ); ?></th>
+                                <th><?php esc_html_e( 'Status', 'wupex-gift-cards' ); ?></th>
+                            </tr>
+                        </tfoot>
                     </table>
 
-                    <div style="margin-top:12px; display:flex; justify-content:flex-end;">
-                        <?php $this->render_pagination( $current_page, $total_pages, $base_url ); ?>
+                    <!-- Bottom tablenav -->
+                    <div class="tablenav bottom">
+                        <div class="alignleft actions">
+                            <button type="button" class="button button-primary" onclick="document.getElementById('wupex-import-selected').click()">
+                                <?php esc_html_e( 'Import Selected', 'wupex-gift-cards' ); ?>
+                            </button>
+                        </div>
+                        <div class="tablenav-pages">
+                            <span class="displaying-num">
+                                <?php printf(
+                                    esc_html( _n( '%s item', '%s items', $total, 'wupex-gift-cards' ) ),
+                                    number_format_i18n( $total )
+                                ); ?>
+                            </span>
+                            <?php $this->render_pagination( $current_page, $total_pages, $base_url ); ?>
+                        </div>
+                        <br class="clear" />
                     </div>
 
                 </form>
@@ -162,104 +211,71 @@ class Wupex_Import {
                     </div>
                     <p id="wupex-progress-text"></p>
                 </div>
-
                 <div id="wupex-import-summary" style="display:none; margin-top:15px;"></div>
 
             <?php else : ?>
                 <div class="notice notice-warning"><p>
-                    <?php esc_html_e( 'No in-stock products found.', 'wupex-gift-cards' ); ?>
-                    <?php if ( $this->last_fetch_error ) : ?>
-                        <br /><strong><?php esc_html_e( 'Reason:', 'wupex-gift-cards' ); ?></strong>
-                        <?php echo esc_html( $this->last_fetch_error ); ?>
-                    <?php endif; ?>
-                    <?php if ( ! empty( $this->last_raw_response ) ) : ?>
-                        <br /><strong><?php esc_html_e( 'API response keys:', 'wupex-gift-cards' ); ?></strong>
-                        <code><?php echo esc_html( implode( ', ', array_keys( $this->last_raw_response ) ) ); ?></code>
-                    <?php endif; ?>
+                    <?php esc_html_e( 'No in-stock products found. Try clicking "Refresh Product List" or check your API settings.', 'wupex-gift-cards' ); ?>
                 </p></div>
             <?php endif; ?>
         </div>
         <?php
     }
 
+    // -------------------------------------------------------------------------
+    // WooCommerce-style pagination using paginate_links()
+    // -------------------------------------------------------------------------
+
     private function render_pagination( int $current, int $total, string $base_url ): void {
         if ( $total <= 1 ) {
             return;
         }
-        echo '<div class="tablenav-pages" style="display:flex; align-items:center; gap:6px;">';
 
-        if ( $current > 1 ) {
-            printf(
-                '<a href="%s" class="button button-secondary">&laquo; %s</a>',
-                esc_url( add_query_arg( 'paged', $current - 1, $base_url ) ),
-                esc_html__( 'Previous', 'wupex-gift-cards' )
-            );
+        $links = paginate_links( [
+            'base'      => add_query_arg( 'paged', '%#%', $base_url ),
+            'format'    => '',
+            'prev_text' => '&laquo;',
+            'next_text' => '&raquo;',
+            'current'   => $current,
+            'total'     => $total,
+            'type'      => 'array',
+        ] );
+
+        if ( ! $links ) {
+            return;
         }
 
-        // Show a window of pages around current
-        $start = max( 1, $current - 2 );
-        $end   = min( $total, $current + 2 );
-
-        if ( $start > 1 ) {
-            printf( '<a href="%s" class="button">1</a>', esc_url( add_query_arg( 'paged', 1, $base_url ) ) );
-            if ( $start > 2 ) {
-                echo '<span style="padding:0 4px;">…</span>';
-            }
+        echo '<span class="pagination-links">';
+        foreach ( $links as $link ) {
+            echo $link; // phpcs:ignore WordPress.Security.EscapeOutput
         }
-
-        for ( $i = $start; $i <= $end; $i++ ) {
-            if ( $i === $current ) {
-                echo '<span class="button button-primary" style="cursor:default;">' . esc_html( $i ) . '</span>';
-            } else {
-                printf(
-                    '<a href="%s" class="button">%d</a>',
-                    esc_url( add_query_arg( 'paged', $i, $base_url ) ),
-                    esc_html( $i )
-                );
-            }
-        }
-
-        if ( $end < $total ) {
-            if ( $end < $total - 1 ) {
-                echo '<span style="padding:0 4px;">…</span>';
-            }
-            printf( '<a href="%s" class="button">%d</a>', esc_url( add_query_arg( 'paged', $total, $base_url ) ), esc_html( $total ) );
-        }
-
-        if ( $current < $total ) {
-            printf(
-                '<a href="%s" class="button button-secondary">%s &raquo;</a>',
-                esc_url( add_query_arg( 'paged', $current + 1, $base_url ) ),
-                esc_html__( 'Next', 'wupex-gift-cards' )
-            );
-        }
-
-        echo '</div>';
+        echo '</span>';
     }
 
     // -------------------------------------------------------------------------
-    // Product fetch — one API page at a time
+    // Product cache — fetch all in-stock products once, cache for 5 min
     // -------------------------------------------------------------------------
 
-    private function fetch_products_page( int $admin_page ): array {
+    private function get_cached_products(): array {
+        $cached = get_transient( self::CACHE_KEY );
+        if ( $cached !== false ) {
+            return $cached;
+        }
+        return $this->fetch_and_cache_all_products();
+    }
+
+    private function fetch_and_cache_all_products(): array {
         $api      = new Wupex_API();
         $results  = [];
-
-        // Fetch in batches of 100 from Wupex until we have PER_PAGE in-stock items
-        // for the requested admin page. API page may differ from admin page.
-        $skip    = ( $admin_page - 1 ) * self::PER_PAGE; // in-stock items to skip
         $api_page = 1;
-        $found    = 0;
 
-        // We need to figure out total pages first, so run one call and track
         do {
             $response = $api->get_products( $api_page, 100 );
-            $this->last_raw_response = $response['data'] ?? [];
 
             if ( ! $response['success'] ) {
                 $this->last_fetch_error = $response['error'] ?? 'Unknown API error';
                 Wupex_API::log( 'IMPORT_FETCH', 'API error: ' . $this->last_fetch_error );
-                return [];
+                break;
             }
 
             $items = $response['data']['items']
@@ -267,52 +283,42 @@ class Wupex_Import {
                 ?? $response['data']['data']
                 ?? $response['data']['result']
                 ?? $response['data']['list']
-                ?? ( is_array( $response['data'] ) && isset( $response['data'][0] ) ? $response['data'] : [] );
+                ?? ( isset( $response['data'][0] ) ? $response['data'] : [] );
 
             if ( $api_page === 1 && empty( $items ) ) {
-                Wupex_API::log( 'IMPORT_FETCH', 'No items. Response keys: ' . implode( ', ', array_keys( $response['data'] ) ) );
+                Wupex_API::log( 'IMPORT_FETCH', 'No items. Response keys: ' . implode( ', ', array_keys( $response['data'] ?? [] ) ) );
+            }
+
+            foreach ( $items as $item ) {
+                if ( (int) ( $item['available'] ?? 0 ) > 0 ) {
+                    $results[] = $item;
+                }
             }
 
             $total_api_pages = (int) ( $response['data']['totalPage'] ?? $response['data']['pages'] ?? $response['data']['totalPages'] ?? 1 );
-
-            foreach ( $items as $item ) {
-                if ( (int) ( $item['available'] ?? 0 ) <= 0 ) {
-                    continue;
-                }
-
-                // Skip items before our page window
-                if ( $found < $skip ) {
-                    $found++;
-                    continue;
-                }
-
-                $results[] = $item;
-                $found++;
-
-                if ( count( $results ) >= self::PER_PAGE ) {
-                    // Estimate total admin pages based on remaining API pages
-                    $in_stock_so_far  = $found;
-                    $api_pages_left   = $total_api_pages - $api_page;
-                    // Rough estimate: use current in-stock rate to project total
-                    $rate             = $found > 0 ? ( count( $items ) > 0 ? ( $found / ( ( $api_page * 100 ) ) ) : 0.5 ) : 0.5;
-                    $est_total        = (int) ceil( $total_api_pages * 100 * $rate );
-                    $this->total_api_pages = max( $admin_page, (int) ceil( $est_total / self::PER_PAGE ) );
-                    return $results;
-                }
-            }
-
             $api_page++;
         } while ( $api_page <= $total_api_pages );
 
-        // Reached the end — calculate total admin pages from what we found
-        $total_in_stock        = $found;
-        $this->total_api_pages = max( 1, (int) ceil( $total_in_stock / self::PER_PAGE ) );
-
-        if ( empty( $results ) && $found === 0 ) {
-            $this->last_fetch_error = 'No in-stock products found across all API pages.';
+        if ( ! empty( $results ) ) {
+            set_transient( self::CACHE_KEY, $results, self::CACHE_EXPIRY );
         }
 
         return $results;
+    }
+
+    // -------------------------------------------------------------------------
+    // AJAX: Refresh product list (busts cache)
+    // -------------------------------------------------------------------------
+
+    public function ajax_refresh_products(): void {
+        check_ajax_referer( 'wupex_admin_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Permission denied.', 'wupex-gift-cards' ) ] );
+        }
+
+        delete_transient( self::CACHE_KEY );
+        wp_send_json_success( [ 'message' => __( 'Product list refreshed. Reloading…', 'wupex-gift-cards' ) ] );
     }
 
     private function is_already_imported( string $sku ): bool {
@@ -342,7 +348,7 @@ class Wupex_Import {
         $raw_products = isset( $_POST['products'] ) ? (array) $_POST['products'] : [];
         $imported = $skipped = $failed = 0;
 
-        // Build type → imageUrl map from the batch so we can fill gaps
+        // Build type → imageUrl fallback map from the batch
         $type_image_map = [];
         foreach ( $raw_products as $raw ) {
             $p = json_decode( wp_unslash( $raw ), true );
@@ -370,6 +376,9 @@ class Wupex_Import {
                 default    => $failed++,
             };
         }
+
+        // Bust cache so refreshed status shows on next page load
+        delete_transient( self::CACHE_KEY );
 
         Wupex_API::log( 'IMPORT', "imported={$imported} skipped={$skipped} failed={$failed}" );
         wp_send_json_success( compact( 'imported', 'skipped', 'failed' ) );
