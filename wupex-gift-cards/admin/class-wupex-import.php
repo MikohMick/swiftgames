@@ -325,13 +325,19 @@ class Wupex_Import {
         if ( empty( $sku ) ) {
             return false;
         }
-        $query = new WC_Product_Query( [
-            'post_type'  => 'product',
-            'meta_query' => [ [ 'key' => '_wupex_sku', 'value' => $sku, 'compare' => '=' ] ],
-            'fields'     => 'ids',
-            'limit'      => 1,
-        ] );
-        return ! empty( $query->get_products() );
+        global $wpdb;
+        $result = $wpdb->get_var( $wpdb->prepare(
+            "SELECT pm.post_id
+             FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+             WHERE pm.meta_key = '_wupex_sku'
+               AND pm.meta_value = %s
+               AND p.post_type = 'product'
+               AND p.post_status != 'trash'
+             LIMIT 1",
+            $sku
+        ) );
+        return ! empty( $result );
     }
 
     // -------------------------------------------------------------------------
@@ -516,19 +522,24 @@ class Wupex_Import {
                     continue;
                 }
 
-                $query = new WC_Product_Query( [
-                    'post_type'  => 'product',
-                    'meta_query' => [ [ 'key' => '_wupex_sku', 'value' => $sku, 'compare' => '=' ] ],
-                    'fields'     => 'ids',
-                    'limit'      => 1,
-                ] );
+                global $wpdb;
+                $product_id = $wpdb->get_var( $wpdb->prepare(
+                    "SELECT pm.post_id
+                     FROM {$wpdb->postmeta} pm
+                     INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+                     WHERE pm.meta_key = '_wupex_sku'
+                       AND pm.meta_value = %s
+                       AND p.post_type = 'product'
+                       AND p.post_status != 'trash'
+                     LIMIT 1",
+                    $sku
+                ) );
 
-                $ids = $query->get_products();
-                if ( empty( $ids ) ) {
+                if ( ! $product_id ) {
                     continue;
                 }
 
-                $wc_product = wc_get_product( $ids[0] );
+                $wc_product = wc_get_product( $product_id );
                 if ( ! $wc_product ) {
                     continue;
                 }
