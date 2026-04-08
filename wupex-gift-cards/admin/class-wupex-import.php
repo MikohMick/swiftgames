@@ -115,7 +115,15 @@ class Wupex_Import {
 
             <?php else : ?>
                 <div class="notice notice-warning"><p>
-                    <?php esc_html_e( 'No in-stock products found. Please check your API settings.', 'wupex-gift-cards' ); ?>
+                    <?php esc_html_e( 'No in-stock products found.', 'wupex-gift-cards' ); ?>
+                    <?php if ( $this->last_fetch_error ) : ?>
+                        <br /><strong><?php esc_html_e( 'Reason:', 'wupex-gift-cards' ); ?></strong>
+                        <?php echo esc_html( $this->last_fetch_error ); ?>
+                    <?php endif; ?>
+                    <?php if ( ! empty( $this->last_raw_response ) ) : ?>
+                        <br /><strong><?php esc_html_e( 'API response keys:', 'wupex-gift-cards' ); ?></strong>
+                        <code><?php echo esc_html( implode( ', ', array_keys( $this->last_raw_response ) ) ); ?></code>
+                    <?php endif; ?>
                 </p></div>
             <?php endif; ?>
         </div>
@@ -126,6 +134,9 @@ class Wupex_Import {
     // Product fetch (paginated)
     // -------------------------------------------------------------------------
 
+    private string $last_fetch_error = '';
+    private array  $last_raw_response = [];
+
     private function fetch_all_products(): array {
         $api      = new Wupex_API();
         $results  = [];
@@ -134,12 +145,32 @@ class Wupex_Import {
 
         do {
             $response = $api->get_products( $page, $per_page );
+
+            // Store raw response for diagnostics
+            $this->last_raw_response = $response['data'] ?? [];
+
             if ( ! $response['success'] ) {
+                $this->last_fetch_error = $response['error'] ?? 'Unknown API error';
+                Wupex_API::log( 'IMPORT_FETCH', 'API error: ' . $this->last_fetch_error );
                 break;
             }
 
-            $items = $response['data']['items'] ?? $response['data']['products'] ?? [];
+            // Try every likely key the Wupex API might use
+            $items = $response['data']['items']
+                ?? $response['data']['products']
+                ?? $response['data']['data']
+                ?? $response['data']['result']
+                ?? $response['data']['list']
+                ?? ( is_array( $response['data'] ) && isset( $response['data'][0] ) ? $response['data'] : [] );
+
+            if ( empty( $items ) ) {
+                // Log the actual keys returned so we can adapt
+                Wupex_API::log( 'IMPORT_FETCH', 'No items found. Response keys: ' . implode( ', ', array_keys( $response['data'] ) ) );
+            }
+
+            $all_count = 0;
             foreach ( $items as $item ) {
+                $all_count++;
                 if ( (int) ( $item['available'] ?? 0 ) > 0 ) {
                     $results[] = $item;
                 }
@@ -148,7 +179,11 @@ class Wupex_Import {
                 }
             }
 
-            $total_pages = (int) ( $response['data']['totalPage'] ?? $response['data']['pages'] ?? 1 );
+            if ( $all_count > 0 && empty( $results ) ) {
+                $this->last_fetch_error = "API returned {$all_count} product(s) but none have available > 0 (all out of stock in sandbox).";
+            }
+
+            $total_pages = (int) ( $response['data']['totalPage'] ?? $response['data']['pages'] ?? $response['data']['totalPages'] ?? 1 );
             $page++;
         } while ( $page <= $total_pages && count( $results ) < self::DISPLAY_LIMIT );
 
