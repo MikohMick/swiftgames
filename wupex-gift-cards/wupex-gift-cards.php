@@ -3,7 +3,7 @@
  * Plugin Name: Wupex Gift Cards
  * Plugin URI:  https://swiftovertimeenterprise.com
  * Description: Connects WooCommerce to the Wupex API for automated gift card (PSN, etc.) delivery.
- * Version:     1.0.0
+ * Version:     1.0.6
  * Author:      Swift Overtime Enterprise
  * Text Domain: wupex-gift-cards
  * Requires at least: 6.0
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'WUPEX_VERSION', '1.0.0' );
+define( 'WUPEX_VERSION', '1.0.6' );
 define( 'WUPEX_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WUPEX_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'WUPEX_PLUGIN_FILE', __FILE__ );
@@ -73,11 +73,8 @@ function wupex_init(): void {
 }
 
 function wupex_enqueue_admin_assets( string $hook ): void {
-    $allowed_hooks = [
-        'woocommerce_page_wupex-gift-cards',
-        'woocommerce_page_wupex-import',
-    ];
-    if ( ! in_array( $hook, $allowed_hooks, true ) ) {
+    $screen = get_current_screen();
+    if ( ! $screen || strpos( $screen->id, 'wupex' ) === false ) {
         return;
     }
     wp_enqueue_style( 'wupex-admin', WUPEX_PLUGIN_URL . 'assets/css/wupex-admin.css', [], WUPEX_VERSION );
