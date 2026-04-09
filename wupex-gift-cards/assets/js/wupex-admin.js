@@ -32,6 +32,42 @@
     });
 
     // -------------------------------------------------------------------------
+    // Settings page: Send Test Email
+    // -------------------------------------------------------------------------
+    $(document).on('click', '#wupex-send-test-email', function () {
+        var btn    = $(this);
+        var result = $('#wupex-test-email-result');
+        var email  = $('#wupex-test-email-address').val().trim();
+
+        if (!email) {
+            result.css('color', '#991b1b').text('Please enter an email address.');
+            return;
+        }
+
+        btn.prop('disabled', true).text('Sending…');
+        result.text('').css('color', '');
+
+        $.post(wupexAdmin.ajax_url, {
+            action: 'wupex_send_test_email',
+            nonce:  wupexAdmin.nonce,
+            email:  email
+        })
+        .done(function (resp) {
+            if (resp.success) {
+                result.css('color', '#065f46').text('✔ ' + resp.data.message);
+            } else {
+                result.css('color', '#991b1b').text('✖ ' + resp.data.message);
+            }
+        })
+        .fail(function () {
+            result.css('color', '#991b1b').text('✖ Request failed.');
+        })
+        .always(function () {
+            btn.prop('disabled', false).text('Send Test Email');
+        });
+    });
+
+    // -------------------------------------------------------------------------
     // Settings page: View Logs
     // -------------------------------------------------------------------------
     $(document).on('click', '#wupex-view-logs', function () {

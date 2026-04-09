@@ -10,6 +10,7 @@ class Wupex_Settings {
         add_action( 'admin_init', [ $this, 'register_settings' ] );
         add_action( 'wp_ajax_wupex_test_connection', [ $this, 'ajax_test_connection' ] );
         add_action( 'wp_ajax_wupex_get_logs', [ $this, 'ajax_get_logs' ] );
+        add_action( 'wp_ajax_wupex_send_test_email', [ $this, 'ajax_send_test_email' ] );
     }
 
     public function register_menu(): void {
@@ -132,6 +133,22 @@ class Wupex_Settings {
                 </button>
                 <span id="wupex-connection-result" style="margin-left:10px;"></span>
             </p>
+            <p>
+                <label for="wupex-test-email-address" style="font-weight:600;">
+                    <?php esc_html_e( 'Send Test Email:', 'wupex-gift-cards' ); ?>
+                </label>
+                <input type="email" id="wupex-test-email-address"
+                       value="<?php echo esc_attr( get_option( 'admin_email' ) ); ?>"
+                       placeholder="email@example.com"
+                       style="width:260px; margin: 0 8px;" />
+                <button type="button" id="wupex-send-test-email" class="button button-secondary">
+                    <?php esc_html_e( 'Send Test Email', 'wupex-gift-cards' ); ?>
+                </button>
+                <span id="wupex-test-email-result" style="margin-left:10px;"></span>
+                <br /><span class="description" style="margin-left:0;">
+                    <?php esc_html_e( 'Sends a sample code-ready email with dummy data so you can check layout and delivery.', 'wupex-gift-cards' ); ?>
+                </span>
+            </p>
 
             <hr />
 
@@ -200,5 +217,76 @@ class Wupex_Settings {
         $lines = file( $log_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES );
         $last  = array_slice( $lines, -100 );
         wp_send_json_success( [ 'lines' => implode( "\n", array_reverse( $last ) ) ] );
+    }
+
+    // -------------------------------------------------------------------------
+    // AJAX: Send Test Email
+    // -------------------------------------------------------------------------
+
+    public function ajax_send_test_email(): void {
+        check_ajax_referer( 'wupex_admin_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Permission denied.', 'wupex-gift-cards' ) ] );
+        }
+
+        $to = sanitize_email( $_POST['email'] ?? '' );
+        if ( ! is_email( $to ) ) {
+            wp_send_json_error( [ 'message' => __( 'Please enter a valid email address.', 'wupex-gift-cards' ) ] );
+        }
+
+        // Build a dummy reveal URL
+        $dummy_token    = 'TEST' . strtoupper( bin2hex( random_bytes( 14 ) ) );
+        $base_reveal    = get_option( 'wupex_reveal_page_url', home_url( '/reveal-code/' ) );
+        $reveal_url     = add_query_arg( 'token', $dummy_token, $base_reveal );
+
+        // Dummy order object (stdClass acting as a minimal WC_Order stand-in for the template)
+        $dummy_order = new class {
+            public function get_order_number(): string  { return 'TEST-001'; }
+            public function get_billing_first_name(): string { return 'Test'; }
+            public function get_billing_email(): string { return ''; }
+            public function get_id(): int { return 0; }
+            public function get_date_created(): object {
+                return new class {
+                    public function date_i18n( string $format ): string {
+                        return date_i18n( $format );
+                    }
+                };
+            }
+        };
+
+        // Dummy code row
+        $dummy_code = [
+            'reveal_token' => $dummy_token,
+            'product_name' => 'Apple Gift Card $10 (USA)',
+        ];
+
+        // Render the email template
+        $codes      = [ $dummy_code ];
+        $order      = $dummy_order;
+        ob_start();
+        include WUPEX_PLUGIN_DIR . 'templates/email-code-ready.php';
+        $content = ob_get_clean();
+
+        $subject = sprintf(
+            __( '[TEST] Your PSN Gift Card is Ready — Order #%s', 'wupex-gift-cards' ),
+            $dummy_order->get_order_number()
+        );
+
+        $headers = [
+            'Content-Type: text/html; charset=UTF-8',
+            'From: ' . get_bloginfo( 'name' ) . ' <' . get_option( 'admin_email' ) . '>',
+        ];
+
+        $sent = wp_mail( $to, $subject, $content, $headers );
+
+        if ( $sent ) {
+            Wupex_API::log( 'TEST_EMAIL', "Test email sent to {$to}" );
+            wp_send_json_success( [
+                'message' => sprintf( __( 'Test email sent to %s — check your inbox.', 'wupex-gift-cards' ), $to ),
+            ] );
+        } else {
+            wp_send_json_error( [ 'message' => __( 'wp_mail() failed. Check your WordPress mail configuration.', 'wupex-gift-cards' ) ] );
+        }
     }
 }
