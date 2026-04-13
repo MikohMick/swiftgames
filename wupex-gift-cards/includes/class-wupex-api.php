@@ -93,6 +93,7 @@ class Wupex_API {
             'x-api-key'    => $this->api_key,
             'Content-Type' => 'application/json',
             'Accept'       => 'application/json, text/plain, */*',
+            'User-Agent'   => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         ];
     }
 
@@ -105,13 +106,19 @@ class Wupex_API {
 
         $code = wp_remote_retrieve_response_code( $response );
         $raw  = wp_remote_retrieve_body( $response );
-        $data = json_decode( $raw, true );
 
-        // Always log the raw response body for debugging (truncated to 500 chars)
-        $this->log( $action, "HTTP {$code} | body: " . substr( $raw, 0, 500 ) );
+        // Detect WAF/firewall HTML pages masquerading as 200
+        if ( str_starts_with( ltrim( $raw ), '<' ) ) {
+            $error = 'API returned an HTML page instead of JSON — likely blocked by a firewall (403/WAF). Check API key and server IP whitelist.';
+            $this->log( $action, "HTTP {$code} | " . $error );
+            return [ 'success' => false, 'data' => [], 'error' => $error ];
+        }
+
+        $data = json_decode( $raw, true );
 
         if ( $code < 200 || $code >= 300 ) {
             $error = $data['message'] ?? "HTTP {$code}";
+            $this->log( $action, "Error {$code}: {$error}" );
             return [ 'success' => false, 'data' => $data ?? [], 'error' => $error ];
         }
 
