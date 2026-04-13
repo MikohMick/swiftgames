@@ -107,9 +107,11 @@ class Wupex_API {
         $raw  = wp_remote_retrieve_body( $response );
         $data = json_decode( $raw, true );
 
+        // Always log the raw response body for debugging (truncated to 500 chars)
+        $this->log( $action, "HTTP {$code} | body: " . substr( $raw, 0, 500 ) );
+
         if ( $code < 200 || $code >= 300 ) {
             $error = $data['message'] ?? "HTTP {$code}";
-            $this->log( $action, "Error {$code}: {$error}" );
             return [ 'success' => false, 'data' => $data ?? [], 'error' => $error ];
         }
 
