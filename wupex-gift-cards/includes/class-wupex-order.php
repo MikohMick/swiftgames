@@ -99,9 +99,6 @@ class Wupex_Order {
         }
 
         $order_data = $detail['data']['orderData'] ?? [];
-        $expiry_hours = (int) get_option( 'wupex_token_expiry_hours', 72 );
-        $token_expiry = date( 'Y-m-d H:i:s', time() + ( $expiry_hours * HOUR_IN_SECONDS ) );
-
         $codes_inserted = 0;
 
         foreach ( $order_data as $order_entry ) {
@@ -128,7 +125,7 @@ class Wupex_Order {
                         'serial_code_encrypted' => $encrypted,
                         'expiry'                => $serial['expiry'] ?? null,
                         'reveal_token'          => $token,
-                        'token_expiry'          => $token_expiry,
+                        'token_expiry'          => null,
                     ] );
 
                     $codes_inserted++;

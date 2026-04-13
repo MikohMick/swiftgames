@@ -26,13 +26,12 @@ class Wupex_Settings {
 
     public function register_settings(): void {
         $fields = [
-            'wupex_api_key'             => 'string',
-            'wupex_merchant_code'       => 'string',
-            'wupex_environment'         => 'string',
-            'wupex_encryption_key'      => 'string',
-            'wupex_token_expiry_hours'  => 'integer',
-            'wupex_markup_percentage'   => 'number',
-            'wupex_auto_categories'     => 'string',
+            'wupex_api_key'           => 'string',
+            'wupex_merchant_code'     => 'string',
+            'wupex_environment'       => 'string',
+            'wupex_encryption_key'    => 'string',
+            'wupex_markup_percentage' => 'number',
+            'wupex_auto_categories'   => 'string',
         ];
 
         foreach ( $fields as $key => $type ) {
@@ -90,14 +89,6 @@ class Wupex_Settings {
                                    value="<?php echo esc_attr( get_option( 'wupex_encryption_key', '' ) ); ?>"
                                    class="regular-text" autocomplete="new-password" />
                             <p class="description"><?php esc_html_e( 'Used to AES-256 encrypt PIN codes. Do not change after codes are stored.', 'wupex-gift-cards' ); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th><label for="wupex_token_expiry_hours"><?php esc_html_e( 'Reveal Link Expiry (hours)', 'wupex-gift-cards' ); ?></label></th>
-                        <td>
-                            <input type="number" name="wupex_token_expiry_hours" id="wupex_token_expiry_hours"
-                                   value="<?php echo esc_attr( get_option( 'wupex_token_expiry_hours', 72 ) ); ?>"
-                                   min="1" class="small-text" />
                         </td>
                     </tr>
                     <tr>

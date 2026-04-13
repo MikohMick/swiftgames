@@ -68,12 +68,7 @@ class Wupex_Reveal {
 
         // Token does not exist
         if ( ! $code ) {
-            return $this->error_message( __( 'Invalid or expired reveal link. Please check your email or contact support.', 'wupex-gift-cards' ) );
-        }
-
-        // Token expired
-        if ( strtotime( $code['token_expiry'] ) < time() ) {
-            return $this->error_message( __( 'This reveal link has expired. Please contact support for assistance.', 'wupex-gift-cards' ) );
+            return $this->error_message( __( 'Invalid reveal link. Please check your email or contact support.', 'wupex-gift-cards' ) );
         }
 
         // Refunded
