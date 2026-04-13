@@ -92,7 +92,7 @@ class Wupex_API {
         return [
             'x-api-key'    => $this->api_key,
             'Content-Type' => 'application/json',
-            'Accept'       => 'application/json',
+            'Accept'       => 'application/json, text/plain, */*',
         ];
     }
 
