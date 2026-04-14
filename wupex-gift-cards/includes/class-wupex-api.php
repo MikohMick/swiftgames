@@ -42,11 +42,11 @@ class Wupex_API {
             'allowTakeAll' => 'true',
         ];
 
-        $body = [
+        $body = [ [
             'merchant' => $this->merchant_code,
             'sku'      => $sku,
             'quantity' => $quantity,
-        ];
+        ] ];
 
         return $this->post( '/api/order/pull-codes', $body, $query_args );
     }
@@ -90,10 +90,11 @@ class Wupex_API {
 
     private function headers(): array {
         return [
-            'x-api-key'    => $this->api_key,
-            'Content-Type' => 'application/json',
-            'Accept'       => 'application/json, text/plain, */*',
-            'User-Agent'   => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'x-api-key'       => $this->api_key,
+            'Content-Type'    => 'application/json',
+            'Accept'          => 'application/json, text/plain, */*',
+            'Accept-Language' => 'en',
+            'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         ];
     }
 

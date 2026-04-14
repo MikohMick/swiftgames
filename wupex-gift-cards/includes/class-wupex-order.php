@@ -67,9 +67,11 @@ class Wupex_Order {
             return;
         }
 
+        // pull-codes returns an array of results (one per SKU in the request)
         $pull_data        = $pull['data'];
-        $wupex_order_name = $pull_data['orderName'] ?? '';
-        $request_id       = $pull_data['requestId'] ?? '';
+        $first_result     = is_array( $pull_data ) && isset( $pull_data[0] ) ? $pull_data[0] : $pull_data;
+        $wupex_order_name = $first_result['orderName'] ?? '';
+        $request_id       = $first_result['requestId'] ?? '';
 
         if ( empty( $wupex_order_name ) ) {
             $this->flag_failure( $order, $sku, 'pull_codes returned no orderName.' );
@@ -84,7 +86,7 @@ class Wupex_Order {
             'wc_product_id'    => $product_id,
             'sku'              => $sku,
             'quantity'         => $quantity,
-            'total_amount'     => $pull_data['totalAmount'] ?? 0,
+            'total_amount'     => $first_result['totalAmount'] ?? 0,
             'status'           => 'pending',
         ] );
 
