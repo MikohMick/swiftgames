@@ -111,7 +111,16 @@ class Wupex_Order {
             return;
         }
 
-        $order_data = $detail['data']['orderData'] ?? [];
+        // Log raw detail response so we can see the real structure
+        Wupex_API::log( 'ORDER_DETAIL_RAW', wp_json_encode( $detail['data'] ), $order_id );
+
+        // Unwrap envelope: API returns {"data":{...},"status":true}
+        $detail_body = $detail['data'];
+        if ( isset( $detail_body['data'] ) && is_array( $detail_body['data'] ) ) {
+            $detail_body = $detail_body['data'];
+        }
+
+        $order_data     = $detail_body['orderData'] ?? ( $detail_body['orders'] ?? [] );
         $codes_inserted = 0;
 
         foreach ( $order_data as $order_entry ) {
