@@ -67,25 +67,15 @@ class Wupex_Order {
             return;
         }
 
-        // Log the raw response so we can inspect the real structure
-        Wupex_API::log( 'PULL_CODES_RAW', wp_json_encode( $pull['data'] ), $order_id );
-
-        // pull-codes returns an array of results (one per SKU in the request)
+        // pull-codes response envelope: {"data":{requestId,orderName,totalAmount},"status":true}
         $pull_data    = $pull['data'];
-        $first_result = is_array( $pull_data ) && isset( $pull_data[0] ) ? $pull_data[0] : $pull_data;
-
-        // Flatten one level if the API wraps in a data/result key
-        if ( isset( $first_result['data'] ) && is_array( $first_result['data'] ) ) {
-            $first_result = $first_result['data'];
-        } elseif ( isset( $first_result['result'] ) && is_array( $first_result['result'] ) ) {
-            $first_result = $first_result['result'];
-        }
+        $first_result = isset( $pull_data['data'] ) ? $pull_data['data'] : $pull_data;
 
         $wupex_order_name = $first_result['orderName'] ?? '';
         $request_id       = $first_result['requestId'] ?? '';
 
         if ( empty( $wupex_order_name ) ) {
-            $this->flag_failure( $order, $sku, 'pull_codes returned no orderName. raw=' . wp_json_encode( $pull['data'] ) );
+            $this->flag_failure( $order, $sku, 'pull_codes returned no orderName.' );
             return;
         }
 
@@ -111,16 +101,13 @@ class Wupex_Order {
             return;
         }
 
-        // Log raw detail response so we can see the real structure
-        Wupex_API::log( 'ORDER_DETAIL_RAW', wp_json_encode( $detail['data'] ), $order_id );
-
-        // Unwrap envelope: API returns {"data":{...},"status":true}
+        // Unwrap envelope: {"data":{id,orderName,orderData:[...]},"status":true}
         $detail_body = $detail['data'];
         if ( isset( $detail_body['data'] ) && is_array( $detail_body['data'] ) ) {
             $detail_body = $detail_body['data'];
         }
 
-        $order_data     = $detail_body['orderData'] ?? ( $detail_body['orders'] ?? [] );
+        $order_data = $detail_body['orderData'] ?? [];
         $codes_inserted = 0;
 
         foreach ( $order_data as $order_entry ) {
