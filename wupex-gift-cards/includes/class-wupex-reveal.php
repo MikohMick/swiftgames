@@ -14,14 +14,13 @@ class Wupex_Reveal {
     }
 
     public function enqueue_styles(): void {
-        if ( isset( $_GET['token'] ) || get_query_var( 'reveal-code', false ) ) {
-            wp_enqueue_style(
-                'wupex-reveal',
-                WUPEX_PLUGIN_URL . 'assets/css/wupex-reveal.css',
-                [],
-                WUPEX_VERSION
-            );
-        }
+        // Always register on frontend — used by the shortcode path
+        wp_enqueue_style(
+            'wupex-reveal',
+            WUPEX_PLUGIN_URL . 'assets/css/wupex-reveal.css',
+            [],
+            WUPEX_VERSION
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -47,7 +46,11 @@ class Wupex_Reveal {
             return;
         }
 
+        // Load inside the full theme (calls wp_head → wp_enqueue_scripts → our CSS).
+        status_header( 200 );
+        get_header();
         echo $this->render_reveal( $token ); // phpcs:ignore WordPress.Security.EscapeOutput
+        get_footer();
         exit;
     }
 
