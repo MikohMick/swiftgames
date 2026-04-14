@@ -67,14 +67,25 @@ class Wupex_Order {
             return;
         }
 
+        // Log the raw response so we can inspect the real structure
+        Wupex_API::log( 'PULL_CODES_RAW', wp_json_encode( $pull['data'] ), $order_id );
+
         // pull-codes returns an array of results (one per SKU in the request)
-        $pull_data        = $pull['data'];
-        $first_result     = is_array( $pull_data ) && isset( $pull_data[0] ) ? $pull_data[0] : $pull_data;
+        $pull_data    = $pull['data'];
+        $first_result = is_array( $pull_data ) && isset( $pull_data[0] ) ? $pull_data[0] : $pull_data;
+
+        // Flatten one level if the API wraps in a data/result key
+        if ( isset( $first_result['data'] ) && is_array( $first_result['data'] ) ) {
+            $first_result = $first_result['data'];
+        } elseif ( isset( $first_result['result'] ) && is_array( $first_result['result'] ) ) {
+            $first_result = $first_result['result'];
+        }
+
         $wupex_order_name = $first_result['orderName'] ?? '';
         $request_id       = $first_result['requestId'] ?? '';
 
         if ( empty( $wupex_order_name ) ) {
-            $this->flag_failure( $order, $sku, 'pull_codes returned no orderName.' );
+            $this->flag_failure( $order, $sku, 'pull_codes returned no orderName. raw=' . wp_json_encode( $pull['data'] ) );
             return;
         }
 
