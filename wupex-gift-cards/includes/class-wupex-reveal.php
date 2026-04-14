@@ -10,6 +10,18 @@ class Wupex_Reveal {
         add_action( 'init', [ $this, 'add_endpoint' ] );
         add_filter( 'query_vars', [ $this, 'add_query_vars' ] );
         add_action( 'template_redirect', [ $this, 'handle_endpoint' ] );
+        add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_styles' ] );
+    }
+
+    public function enqueue_styles(): void {
+        if ( isset( $_GET['token'] ) || get_query_var( 'reveal-code', false ) ) {
+            wp_enqueue_style(
+                'wupex-reveal',
+                WUPEX_PLUGIN_URL . 'assets/css/wupex-reveal.css',
+                [],
+                WUPEX_VERSION
+            );
+        }
     }
 
     // -------------------------------------------------------------------------
