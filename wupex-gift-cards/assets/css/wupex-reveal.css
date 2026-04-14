@@ -39,6 +39,36 @@
     animation: wupex-fadein .38s ease both;
 }
 
+/* ---- Desktop: two-column layout ---- */
+@media (min-width: 760px) {
+    .wupex-reveal-card {
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        max-width: 860px;
+    }
+
+    .wupex-reveal-header {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 48px 36px;
+        /* gradient runs top-to-bottom on the left panel */
+        background: linear-gradient(180deg, var(--wupex-primary) 0%, var(--wupex-primary-dark) 100%);
+    }
+
+    .wupex-reveal-body {
+        padding: 40px 40px 36px;
+    }
+
+    .wupex-product-name {
+        text-align: left;
+    }
+
+    .wupex-reveal-note {
+        text-align: left;
+    }
+}
+
 /* ---- Header band ---- */
 .wupex-reveal-header {
     background: linear-gradient(135deg, var(--wupex-primary) 0%, var(--wupex-primary-dark) 100%);
