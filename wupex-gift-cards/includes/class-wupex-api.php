@@ -110,8 +110,9 @@ class Wupex_API {
 
         // Detect WAF/firewall HTML pages masquerading as 200
         if ( str_starts_with( ltrim( $raw ), '<' ) ) {
-            $error = 'API returned an HTML page instead of JSON — likely blocked by a firewall (403/WAF). Check API key and server IP whitelist.';
-            $this->log( $action, "HTTP {$code} | " . $error );
+            $preview = substr( preg_replace( '/\s+/', ' ', $raw ), 0, 400 );
+            $error   = 'API returned HTML instead of JSON.';
+            $this->log( $action, "HTTP {$code} | HTML body preview: {$preview}" );
             return [ 'success' => false, 'data' => [], 'error' => $error ];
         }
 
