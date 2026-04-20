@@ -167,22 +167,31 @@ class Wupex_Settings {
             wp_send_json_error( [ 'message' => __( 'Permission denied.', 'wupex-gift-cards' ) ] );
         }
 
+        // Detect the outbound IP WordPress actually uses for external HTTP requests
+        $ip_response = wp_remote_get( 'https://api.ipify.org', [ 'timeout' => 10 ] );
+        $outbound_ip = ( ! is_wp_error( $ip_response ) )
+            ? wp_remote_retrieve_body( $ip_response )
+            : 'unknown';
+
         $api    = new Wupex_API();
         $result = $api->get_balance();
 
         if ( $result['success'] ) {
             $data    = $result['data'];
-            $balance = $data['balance'] ?? 'N/A';
-            $credit  = $data['credit'] ?? 'N/A';
+            $balance = $data['data']['balance'] ?? $data['balance'] ?? 'N/A';
+            $credit  = $data['data']['credit']  ?? $data['credit']  ?? 'N/A';
             wp_send_json_success( [
                 'message' => sprintf(
-                    __( 'Connection successful! Balance: %s | Credit: %s', 'wupex-gift-cards' ),
+                    __( 'Connection successful! Balance: %s | Credit: %s | Server outbound IP: %s', 'wupex-gift-cards' ),
                     $balance,
-                    $credit
+                    $credit,
+                    esc_html( $outbound_ip )
                 ),
             ] );
         } else {
-            wp_send_json_error( [ 'message' => $result['error'] ] );
+            wp_send_json_error( [
+                'message' => $result['error'] . sprintf( __( ' | Server outbound IP: %s', 'wupex-gift-cards' ), esc_html( $outbound_ip ) ),
+            ] );
         }
     }
 
