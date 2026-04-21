@@ -586,9 +586,8 @@ class Wupex_Import {
         $product->set_regular_price( (string) $wc_price );
         $product->set_virtual( true );
         $product->set_downloadable( false );
-        $product->set_manage_stock( true );
-        $product->set_stock_quantity( $available );
-        $product->set_stock_status( $available > 0 ? 'instock' : 'outofstock' );
+        $product->set_manage_stock( false );  // pull-on-demand — always in stock
+        $product->set_stock_status( 'instock' );
 
         if ( get_option( 'wupex_auto_categories', '1' ) === '1' && ! empty( $data['productType'] ) ) {
             $cat_id = $this->get_or_create_category( $data['productType'] );
@@ -713,8 +712,8 @@ class Wupex_Import {
                     continue;
                 }
 
-                $wc_product->set_stock_quantity( $available );
-                $wc_product->set_stock_status( $available > 0 ? 'instock' : 'outofstock' );
+                $wc_product->set_manage_stock( false );
+                $wc_product->set_stock_status( 'instock' );
                 $wc_product->save();
                 $total++;
             }
