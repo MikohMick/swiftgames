@@ -42,105 +42,112 @@ class Wupex_Import {
             wp_die( esc_html__( 'Insufficient permissions.', 'wupex-gift-cards' ) );
         }
 
-        $current_page = max( 1, (int) ( $_GET['paged'] ?? 1 ) );
-        $all_products = $this->get_cached_products();
-        $total        = count( $all_products );
-        $total_pages  = max( 1, (int) ceil( $total / self::PER_PAGE ) );
-        $current_page = min( $current_page, $total_pages );
-        $offset       = ( $current_page - 1 ) * self::PER_PAGE;
-        $products     = array_slice( $all_products, $offset, self::PER_PAGE );
-        $markup       = (float) get_option( 'wupex_markup_percentage', 0 );
-
-        // Build type → imageUrl fallback from ALL cached products (not just current page)
-        $type_image_map = [];
-        foreach ( $all_products as $p ) {
-            $type = $p['productType'] ?? '';
-            if ( ! empty( $type ) && ! empty( $p['imageUrl'] ) && ! isset( $type_image_map[ $type ] ) ) {
-                $type_image_map[ $type ] = $p['imageUrl'];
-            }
-        }
-
-        $base_url     = admin_url( 'admin.php?page=wupex-import' );
         $cached_types = get_transient( self::TYPE_CACHE_KEY );
         $saved_types  = (array) get_option( 'wupex_allowed_types', [] );
+        $filter_ready = ! empty( $saved_types ); // only show products when a filter is chosen
         ?>
         <div class="wrap wupex-import-wrap">
             <h1><?php esc_html_e( 'Import Wupex Products', 'wupex-gift-cards' ); ?></h1>
 
-            <!-- ── Product Type Filter ── -->
-            <div class="wupex-type-filter-box">
-                <div class="wupex-type-filter-header">
-                    <h2 style="margin:0;"><?php esc_html_e( 'Product Type Filter', 'wupex-gift-cards' ); ?></h2>
-                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                        <button type="button" id="wupex-load-types" class="button button-secondary">
-                            <?php echo $cached_types ? esc_html__( 'Refresh Types', 'wupex-gift-cards' ) : esc_html__( 'Load Types', 'wupex-gift-cards' ); ?>
-                        </button>
-                        <span id="wupex-types-loading" style="display:none;">
-                            <span class="spinner is-active" style="float:none; margin:0;"></span>
-                            <?php esc_html_e( 'Fetching all product types… this takes ~30 seconds.', 'wupex-gift-cards' ); ?>
-                        </span>
-                    </div>
+            <?php if ( ! $cached_types ) : ?>
+            <!-- ── STEP 1: No types loaded yet ── -->
+            <div class="wupex-setup-card">
+                <div class="wupex-setup-step">1</div>
+                <div class="wupex-setup-body">
+                    <h2><?php esc_html_e( 'Load Product Categories', 'wupex-gift-cards' ); ?></h2>
+                    <p><?php esc_html_e( 'First, fetch all available product categories from Wupex. This takes about 30 seconds and is cached for 24 hours.', 'wupex-gift-cards' ); ?></p>
+                    <button type="button" id="wupex-load-types" class="button button-primary button-large">
+                        <?php esc_html_e( 'Load Categories', 'wupex-gift-cards' ); ?>
+                    </button>
+                    <span id="wupex-types-loading" style="display:none; margin-left:12px;">
+                        <span class="spinner is-active" style="float:none; margin:0; vertical-align:middle;"></span>
+                        <em><?php esc_html_e( 'Fetching… please wait up to 30 seconds.', 'wupex-gift-cards' ); ?></em>
+                    </span>
                 </div>
+            </div>
 
-                <?php if ( $cached_types ) : ?>
-                    <p class="description" style="margin:8px 0 12px;">
-                        <?php printf(
-                            esc_html__( '%d product types available.', 'wupex-gift-cards' ),
-                            count( $cached_types )
-                        ); ?>
-                        <?php if ( ! empty( $saved_types ) ) : ?>
-                            <strong><?php printf(
-                                esc_html__( 'Active filter: %d type(s) selected.', 'wupex-gift-cards' ),
-                                count( $saved_types )
-                            ); ?></strong>
-                        <?php else : ?>
-                            <?php esc_html_e( 'No filter active — all types shown.', 'wupex-gift-cards' ); ?>
-                        <?php endif; ?>
-                    </p>
+            <?php elseif ( ! $filter_ready ) : ?>
+            <!-- ── STEP 2: Types loaded, pick categories ── -->
+            <div class="wupex-setup-card">
+                <div class="wupex-setup-step">2</div>
+                <div class="wupex-setup-body">
+                    <h2><?php esc_html_e( 'Select Categories to Import', 'wupex-gift-cards' ); ?></h2>
+                    <p><?php printf(
+                        esc_html__( '%d categories found. Tick the ones you want, then click Save.', 'wupex-gift-cards' ),
+                        count( $cached_types )
+                    ); ?></p>
 
                     <div class="wupex-type-grid">
                         <label class="wupex-type-select-all">
-                            <input type="checkbox" id="wupex-toggle-all-types"
-                                <?php checked( empty( $saved_types ) ); ?> />
+                            <input type="checkbox" id="wupex-toggle-all-types" />
                             <strong><?php esc_html_e( 'Select All / None', 'wupex-gift-cards' ); ?></strong>
                         </label>
-                        <?php foreach ( $cached_types as $type => $count ) :
-                            $is_checked = empty( $saved_types ) || in_array( $type, $saved_types, true );
-                        ?>
+                        <?php foreach ( $cached_types as $type => $count ) : ?>
                         <label class="wupex-type-item">
                             <input type="checkbox" class="wupex-type-check"
-                                   name="wupex_type[]"
-                                   value="<?php echo esc_attr( $type ); ?>"
-                                   <?php checked( $is_checked ); ?> />
+                                   value="<?php echo esc_attr( $type ); ?>" />
                             <?php echo esc_html( $type ); ?>
                             <span class="wupex-type-count">(<?php echo number_format_i18n( $count ); ?>)</span>
                         </label>
                         <?php endforeach; ?>
                     </div>
 
-                    <p style="margin-top:12px;">
-                        <button type="button" id="wupex-save-types" class="button button-primary">
-                            <?php esc_html_e( 'Save Filter & Reload', 'wupex-gift-cards' ); ?>
+                    <p style="margin-top:14px;">
+                        <button type="button" id="wupex-save-types" class="button button-primary button-large">
+                            <?php esc_html_e( 'Save & Show Products', 'wupex-gift-cards' ); ?>
                         </button>
-                        <span id="wupex-save-types-result" style="margin-left:10px;"></span>
+                        <span id="wupex-save-types-result" style="margin-left:12px;"></span>
                     </p>
-
-                <?php else : ?>
-                    <p class="description" style="margin-top:10px;">
-                        <?php esc_html_e( 'Click "Load Types" to discover all available product types from Wupex. This only needs to be done once and is cached for 24 hours.', 'wupex-gift-cards' ); ?>
+                    <p style="margin-top:6px;">
+                        <button type="button" id="wupex-load-types" class="button button-link">
+                            <?php esc_html_e( 'Refresh category list', 'wupex-gift-cards' ); ?>
+                        </button>
+                        <span id="wupex-types-loading" style="display:none; margin-left:8px;">
+                            <span class="spinner is-active" style="float:none; margin:0; vertical-align:middle;"></span>
+                        </span>
                     </p>
-                <?php endif; ?>
+                </div>
             </div>
-            <hr />
 
-            <div class="tablenav top" style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-                <button type="button" id="wupex-sync-stock" class="button button-secondary">
-                    <?php esc_html_e( 'Sync Stock', 'wupex-gift-cards' ); ?>
-                </button>
-                <button type="button" id="wupex-refresh-products" class="button button-secondary">
-                    <?php esc_html_e( 'Refresh Product List', 'wupex-gift-cards' ); ?>
-                </button>
-                <span id="wupex-sync-result"></span>
+            <?php else :
+                // ── STEP 3: Filter saved — load and show products ──
+                $current_page   = max( 1, (int) ( $_GET['paged'] ?? 1 ) );
+                $all_products   = $this->get_cached_products();
+                $total          = count( $all_products );
+                $total_pages    = max( 1, (int) ceil( $total / self::PER_PAGE ) );
+                $current_page   = min( $current_page, $total_pages );
+                $offset         = ( $current_page - 1 ) * self::PER_PAGE;
+                $products       = array_slice( $all_products, $offset, self::PER_PAGE );
+                $markup         = (float) get_option( 'wupex_markup_percentage', 0 );
+                $base_url       = admin_url( 'admin.php?page=wupex-import' );
+
+                $type_image_map = [];
+                foreach ( $all_products as $p ) {
+                    $type = $p['productType'] ?? '';
+                    if ( ! empty( $type ) && ! empty( $p['imageUrl'] ) && ! isset( $type_image_map[ $type ] ) ) {
+                        $type_image_map[ $type ] = $p['imageUrl'];
+                    }
+                }
+            ?>
+
+            <!-- ── Active filter bar ── -->
+            <div class="wupex-filter-bar">
+                <span class="wupex-filter-bar-label">
+                    <?php esc_html_e( 'Active filter:', 'wupex-gift-cards' ); ?>
+                    <strong><?php echo esc_html( implode( ', ', $saved_types ) ); ?></strong>
+                </span>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <button type="button" id="wupex-change-filter" class="button button-secondary button-small">
+                        <?php esc_html_e( 'Change Categories', 'wupex-gift-cards' ); ?>
+                    </button>
+                    <button type="button" id="wupex-sync-stock" class="button button-secondary button-small">
+                        <?php esc_html_e( 'Sync Stock', 'wupex-gift-cards' ); ?>
+                    </button>
+                    <button type="button" id="wupex-refresh-products" class="button button-secondary button-small">
+                        <?php esc_html_e( 'Refresh List', 'wupex-gift-cards' ); ?>
+                    </button>
+                    <span id="wupex-sync-result"></span>
+                </div>
             </div>
 
             <?php if ( ! empty( $this->last_fetch_error ) && empty( $products ) ) : ?>
@@ -289,8 +296,9 @@ class Wupex_Import {
                 <div class="notice notice-warning"><p>
                     <?php esc_html_e( 'No in-stock products found. Try clicking "Refresh Product List" or check your API settings.', 'wupex-gift-cards' ); ?>
                 </p></div>
-            <?php endif; ?>
-        </div>
+            <?php endif; // inner: products if/elseif/else ?>
+        <?php endif; // outer: step 1 / step 2 / step 3 ?>
+        </div><!-- .wupex-import-wrap -->
         <?php
     }
 

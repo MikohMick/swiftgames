@@ -263,6 +263,27 @@
     });
 
     // -------------------------------------------------------------------------
+    // Import page: Change Categories (clears saved filter → back to Step 2)
+    // -------------------------------------------------------------------------
+    $(document).on('click', '#wupex-change-filter', function () {
+        var btn = $(this);
+        btn.prop('disabled', true).text('Clearing…');
+
+        $.post(wupexAdmin.ajax_url, {
+            action: 'wupex_save_type_filter',
+            nonce:  wupexAdmin.nonce,
+            types:  []
+        })
+        .done(function () {
+            window.location.reload();
+        })
+        .fail(function () {
+            btn.prop('disabled', false).text('Change Categories');
+            alert('Request failed. Try again.');
+        });
+    });
+
+    // -------------------------------------------------------------------------
     // Import page: Sync Stock
     // -------------------------------------------------------------------------
     $(document).on('click', '#wupex-sync-stock', function () {
