@@ -286,7 +286,8 @@ class Wupex_Import {
                 ?? ( isset( $response['data'][0] ) ? $response['data'] : [] );
 
             if ( $api_page === 1 && empty( $items ) ) {
-                Wupex_API::log( 'IMPORT_FETCH', 'No items. Response keys: ' . implode( ', ', array_keys( $response['data'] ?? [] ) ) );
+                $raw_preview = substr( wp_json_encode( $response['data'] ), 0, 600 );
+                Wupex_API::log( 'IMPORT_FETCH', 'No items found. Raw response: ' . $raw_preview );
             }
 
             foreach ( $items as $item ) {
