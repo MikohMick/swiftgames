@@ -278,25 +278,43 @@ class Wupex_Import {
                 break;
             }
 
-            $items = $response['data']['items']
-                ?? $response['data']['products']
-                ?? $response['data']['data']
-                ?? $response['data']['result']
-                ?? $response['data']['list']
-                ?? ( isset( $response['data'][0] ) ? $response['data'] : [] );
+            $body = $response['data'];
+
+            // Production: {"pageInfo":{...},"data":[...],"status":true}
+            // Sandbox:    {"data":{"items":[...],"totalPage":N},"status":true}
+            $items = [];
+            if ( isset( $body['data'] ) && is_array( $body['data'] ) && isset( $body['data'][0] ) ) {
+                // Production — data is a direct array of products
+                $items = $body['data'];
+            } elseif ( isset( $body['data']['items'] ) ) {
+                $items = $body['data']['items'];
+            } elseif ( isset( $body['data']['products'] ) ) {
+                $items = $body['data']['products'];
+            } elseif ( isset( $body['data']['list'] ) ) {
+                $items = $body['data']['list'];
+            }
 
             if ( $api_page === 1 && empty( $items ) ) {
-                $raw_preview = substr( wp_json_encode( $response['data'] ), 0, 600 );
+                $raw_preview = substr( wp_json_encode( $body ), 0, 600 );
                 Wupex_API::log( 'IMPORT_FETCH', 'No items found. Raw response: ' . $raw_preview );
             }
 
+            // Include all enabled products — available=0 just means no pre-loaded stock;
+            // codes are pulled on demand when an order is placed.
             foreach ( $items as $item ) {
-                if ( (int) ( $item['available'] ?? 0 ) > 0 ) {
+                if ( $item['enabled'] ?? true ) {
                     $results[] = $item;
                 }
             }
 
-            $total_api_pages = (int) ( $response['data']['totalPage'] ?? $response['data']['pages'] ?? $response['data']['totalPages'] ?? 1 );
+            // Pagination: production uses pageInfo.totalPage, sandbox uses data.totalPage
+            $total_api_pages = (int) (
+                $body['pageInfo']['totalPage']
+                ?? $body['data']['totalPage']
+                ?? $body['data']['pages']
+                ?? $body['data']['totalPages']
+                ?? 1
+            );
             $api_page++;
         } while ( $api_page <= $total_api_pages );
 
@@ -508,15 +526,16 @@ class Wupex_Import {
                 break;
             }
 
-            $items = $response['data']['items']
-                ?? $response['data']['products']
-                ?? $response['data']['data']
-                ?? $response['data']['result']
-                ?? $response['data']['list']
-                ?? [];
-
-            if ( $page === 1 && empty( $items ) ) {
-                Wupex_API::log( 'STOCK_SYNC', 'No items found. Raw: ' . substr( wp_json_encode( $response['data'] ), 0, 600 ) );
+            $body  = $response['data'];
+            $items = [];
+            if ( isset( $body['data'] ) && is_array( $body['data'] ) && isset( $body['data'][0] ) ) {
+                $items = $body['data'];
+            } elseif ( isset( $body['data']['items'] ) ) {
+                $items = $body['data']['items'];
+            } elseif ( isset( $body['data']['products'] ) ) {
+                $items = $body['data']['products'];
+            } elseif ( isset( $body['data']['list'] ) ) {
+                $items = $body['data']['list'];
             }
 
             foreach ( $items as $item ) {
@@ -555,7 +574,13 @@ class Wupex_Import {
                 $total++;
             }
 
-            $total_pages = (int) ( $response['data']['totalPage'] ?? $response['data']['pages'] ?? $response['data']['totalPages'] ?? 1 );
+            $total_pages = (int) (
+                $body['pageInfo']['totalPage']
+                ?? $body['data']['totalPage']
+                ?? $body['data']['pages']
+                ?? $body['data']['totalPages']
+                ?? 1
+            );
             $page++;
         } while ( $page <= $total_pages );
 
