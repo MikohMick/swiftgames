@@ -5,17 +5,21 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Wupex_Import {
 
-    private const PER_PAGE     = 20;
-    private const CACHE_KEY    = 'wupex_product_cache';
-    private const CACHE_EXPIRY = 300; // 5 minutes
+    private const PER_PAGE          = 20;
+    private const CACHE_KEY         = 'wupex_product_cache';
+    private const CACHE_EXPIRY      = 300;          // 5 minutes
+    private const TYPE_CACHE_KEY    = 'wupex_type_cache';
+    private const TYPE_CACHE_EXPIRY = DAY_IN_SECONDS; // 24 hours
 
     private string $last_fetch_error = '';
 
     public function __construct() {
         add_action( 'admin_menu', [ $this, 'register_submenu' ] );
-        add_action( 'wp_ajax_wupex_import_products', [ $this, 'ajax_import_products' ] );
-        add_action( 'wp_ajax_wupex_sync_stock', [ $this, 'ajax_sync_stock' ] );
-        add_action( 'wp_ajax_wupex_refresh_products', [ $this, 'ajax_refresh_products' ] );
+        add_action( 'wp_ajax_wupex_import_products',   [ $this, 'ajax_import_products' ] );
+        add_action( 'wp_ajax_wupex_sync_stock',        [ $this, 'ajax_sync_stock' ] );
+        add_action( 'wp_ajax_wupex_refresh_products',  [ $this, 'ajax_refresh_products' ] );
+        add_action( 'wp_ajax_wupex_fetch_types',       [ $this, 'ajax_fetch_types' ] );
+        add_action( 'wp_ajax_wupex_save_type_filter',  [ $this, 'ajax_save_type_filter' ] );
     }
 
     public function register_submenu(): void {
@@ -56,10 +60,78 @@ class Wupex_Import {
             }
         }
 
-        $base_url = admin_url( 'admin.php?page=wupex-import' );
+        $base_url     = admin_url( 'admin.php?page=wupex-import' );
+        $cached_types = get_transient( self::TYPE_CACHE_KEY );
+        $saved_types  = (array) get_option( 'wupex_allowed_types', [] );
         ?>
         <div class="wrap wupex-import-wrap">
             <h1><?php esc_html_e( 'Import Wupex Products', 'wupex-gift-cards' ); ?></h1>
+
+            <!-- ── Product Type Filter ── -->
+            <div class="wupex-type-filter-box">
+                <div class="wupex-type-filter-header">
+                    <h2 style="margin:0;"><?php esc_html_e( 'Product Type Filter', 'wupex-gift-cards' ); ?></h2>
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <button type="button" id="wupex-load-types" class="button button-secondary">
+                            <?php echo $cached_types ? esc_html__( 'Refresh Types', 'wupex-gift-cards' ) : esc_html__( 'Load Types', 'wupex-gift-cards' ); ?>
+                        </button>
+                        <span id="wupex-types-loading" style="display:none;">
+                            <span class="spinner is-active" style="float:none; margin:0;"></span>
+                            <?php esc_html_e( 'Fetching all product types… this takes ~30 seconds.', 'wupex-gift-cards' ); ?>
+                        </span>
+                    </div>
+                </div>
+
+                <?php if ( $cached_types ) : ?>
+                    <p class="description" style="margin:8px 0 12px;">
+                        <?php printf(
+                            esc_html__( '%d product types available.', 'wupex-gift-cards' ),
+                            count( $cached_types )
+                        ); ?>
+                        <?php if ( ! empty( $saved_types ) ) : ?>
+                            <strong><?php printf(
+                                esc_html__( 'Active filter: %d type(s) selected.', 'wupex-gift-cards' ),
+                                count( $saved_types )
+                            ); ?></strong>
+                        <?php else : ?>
+                            <?php esc_html_e( 'No filter active — all types shown.', 'wupex-gift-cards' ); ?>
+                        <?php endif; ?>
+                    </p>
+
+                    <div class="wupex-type-grid">
+                        <label class="wupex-type-select-all">
+                            <input type="checkbox" id="wupex-toggle-all-types"
+                                <?php checked( empty( $saved_types ) ); ?> />
+                            <strong><?php esc_html_e( 'Select All / None', 'wupex-gift-cards' ); ?></strong>
+                        </label>
+                        <?php foreach ( $cached_types as $type => $count ) :
+                            $is_checked = empty( $saved_types ) || in_array( $type, $saved_types, true );
+                        ?>
+                        <label class="wupex-type-item">
+                            <input type="checkbox" class="wupex-type-check"
+                                   name="wupex_type[]"
+                                   value="<?php echo esc_attr( $type ); ?>"
+                                   <?php checked( $is_checked ); ?> />
+                            <?php echo esc_html( $type ); ?>
+                            <span class="wupex-type-count">(<?php echo number_format_i18n( $count ); ?>)</span>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <p style="margin-top:12px;">
+                        <button type="button" id="wupex-save-types" class="button button-primary">
+                            <?php esc_html_e( 'Save Filter & Reload', 'wupex-gift-cards' ); ?>
+                        </button>
+                        <span id="wupex-save-types-result" style="margin-left:10px;"></span>
+                    </p>
+
+                <?php else : ?>
+                    <p class="description" style="margin-top:10px;">
+                        <?php esc_html_e( 'Click "Load Types" to discover all available product types from Wupex. This only needs to be done once and is cached for 24 hours.', 'wupex-gift-cards' ); ?>
+                    </p>
+                <?php endif; ?>
+            </div>
+            <hr />
 
             <div class="tablenav top" style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
                 <button type="button" id="wupex-sync-stock" class="button button-secondary">
@@ -253,7 +325,104 @@ class Wupex_Import {
     }
 
     // -------------------------------------------------------------------------
-    // Product cache — fetch all in-stock products once, cache for 5 min
+    // Response helpers
+    // -------------------------------------------------------------------------
+
+    private function extract_items( array $body ): array {
+        // Production: {"pageInfo":{...},"data":[...],"status":true}
+        if ( isset( $body['data'] ) && is_array( $body['data'] ) && isset( $body['data'][0] ) ) {
+            return $body['data'];
+        }
+        // Sandbox / nested: {"data":{"items":[...],...},"status":true}
+        return $body['data']['items']
+            ?? $body['data']['products']
+            ?? $body['data']['list']
+            ?? [];
+    }
+
+    private function extract_total_pages( array $body ): int {
+        return (int) (
+            $body['pageInfo']['totalPage']
+            ?? $body['data']['totalPage']
+            ?? $body['data']['pages']
+            ?? $body['data']['totalPages']
+            ?? 1
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // AJAX: Fetch all product types
+    // -------------------------------------------------------------------------
+
+    public function ajax_fetch_types(): void {
+        check_ajax_referer( 'wupex_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Permission denied.', 'wupex-gift-cards' ) ] );
+        }
+
+        @set_time_limit( 0 );
+
+        $api   = new Wupex_API();
+        $types = [];
+        $page  = 1;
+
+        do {
+            $response = $api->get_products( $page, 200 );
+            if ( ! $response['success'] ) {
+                break;
+            }
+
+            $body  = $response['data'];
+            $items = $this->extract_items( $body );
+
+            foreach ( $items as $item ) {
+                if ( ! ( $item['enabled'] ?? true ) ) {
+                    continue;
+                }
+                $type = trim( $item['productType'] ?? '' );
+                if ( empty( $type ) ) {
+                    continue;
+                }
+                $types[ $type ] = ( $types[ $type ] ?? 0 ) + 1;
+            }
+
+            $total_pages = $this->extract_total_pages( $body );
+            $page++;
+        } while ( $page <= $total_pages );
+
+        ksort( $types );
+        set_transient( self::TYPE_CACHE_KEY, $types, self::TYPE_CACHE_EXPIRY );
+        Wupex_API::log( 'TYPE_FETCH', 'Discovered ' . count( $types ) . ' product types, ' . array_sum( $types ) . ' total products.' );
+
+        wp_send_json_success( [ 'count' => count( $types ) ] );
+    }
+
+    // -------------------------------------------------------------------------
+    // AJAX: Save type filter
+    // -------------------------------------------------------------------------
+
+    public function ajax_save_type_filter(): void {
+        check_ajax_referer( 'wupex_admin_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            wp_send_json_error( [ 'message' => __( 'Permission denied.', 'wupex-gift-cards' ) ] );
+        }
+
+        $selected = isset( $_POST['types'] )
+            ? array_values( array_filter( array_map( 'sanitize_text_field', (array) $_POST['types'] ) ) )
+            : [];
+
+        update_option( 'wupex_allowed_types', $selected );
+        delete_transient( self::CACHE_KEY );
+
+        wp_send_json_success( [
+            'message' => count( $selected ) > 0
+                ? sprintf( __( '%d type(s) saved.', 'wupex-gift-cards' ), count( $selected ) )
+                : __( 'Filter cleared.', 'wupex-gift-cards' ),
+        ] );
+    }
+
+    // -------------------------------------------------------------------------
+    // Product cache — fetch filtered products, cache for 5 min
     // -------------------------------------------------------------------------
 
     private function get_cached_products(): array {
@@ -265,9 +434,10 @@ class Wupex_Import {
     }
 
     private function fetch_and_cache_all_products(): array {
-        $api      = new Wupex_API();
-        $results  = [];
-        $api_page = 1;
+        $api           = new Wupex_API();
+        $results       = [];
+        $api_page      = 1;
+        $allowed_types = (array) get_option( 'wupex_allowed_types', [] );
 
         do {
             $response = $api->get_products( $api_page, 100 );
@@ -278,43 +448,27 @@ class Wupex_Import {
                 break;
             }
 
-            $body = $response['data'];
-
-            // Production: {"pageInfo":{...},"data":[...],"status":true}
-            // Sandbox:    {"data":{"items":[...],"totalPage":N},"status":true}
-            $items = [];
-            if ( isset( $body['data'] ) && is_array( $body['data'] ) && isset( $body['data'][0] ) ) {
-                // Production — data is a direct array of products
-                $items = $body['data'];
-            } elseif ( isset( $body['data']['items'] ) ) {
-                $items = $body['data']['items'];
-            } elseif ( isset( $body['data']['products'] ) ) {
-                $items = $body['data']['products'];
-            } elseif ( isset( $body['data']['list'] ) ) {
-                $items = $body['data']['list'];
-            }
+            $body  = $response['data'];
+            $items = $this->extract_items( $body );
 
             if ( $api_page === 1 && empty( $items ) ) {
-                $raw_preview = substr( wp_json_encode( $body ), 0, 600 );
-                Wupex_API::log( 'IMPORT_FETCH', 'No items found. Raw response: ' . $raw_preview );
+                Wupex_API::log( 'IMPORT_FETCH', 'No items found. Raw: ' . substr( wp_json_encode( $body ), 0, 400 ) );
             }
 
-            // Include all enabled products — available=0 just means no pre-loaded stock;
-            // codes are pulled on demand when an order is placed.
             foreach ( $items as $item ) {
-                if ( $item['enabled'] ?? true ) {
-                    $results[] = $item;
+                if ( ! ( $item['enabled'] ?? true ) ) {
+                    continue;
                 }
+                if ( ! empty( $allowed_types ) ) {
+                    $type = trim( $item['productType'] ?? '' );
+                    if ( ! in_array( $type, $allowed_types, true ) ) {
+                        continue;
+                    }
+                }
+                $results[] = $item;
             }
 
-            // Pagination: production uses pageInfo.totalPage, sandbox uses data.totalPage
-            $total_api_pages = (int) (
-                $body['pageInfo']['totalPage']
-                ?? $body['data']['totalPage']
-                ?? $body['data']['pages']
-                ?? $body['data']['totalPages']
-                ?? 1
-            );
+            $total_api_pages = $this->extract_total_pages( $body );
             $api_page++;
         } while ( $api_page <= $total_api_pages );
 
@@ -527,16 +681,7 @@ class Wupex_Import {
             }
 
             $body  = $response['data'];
-            $items = [];
-            if ( isset( $body['data'] ) && is_array( $body['data'] ) && isset( $body['data'][0] ) ) {
-                $items = $body['data'];
-            } elseif ( isset( $body['data']['items'] ) ) {
-                $items = $body['data']['items'];
-            } elseif ( isset( $body['data']['products'] ) ) {
-                $items = $body['data']['products'];
-            } elseif ( isset( $body['data']['list'] ) ) {
-                $items = $body['data']['list'];
-            }
+            $items = ( new self() )->extract_items( $body );
 
             foreach ( $items as $item ) {
                 $sku       = $item['productCode'] ?? '';
@@ -574,13 +719,7 @@ class Wupex_Import {
                 $total++;
             }
 
-            $total_pages = (int) (
-                $body['pageInfo']['totalPage']
-                ?? $body['data']['totalPage']
-                ?? $body['data']['pages']
-                ?? $body['data']['totalPages']
-                ?? 1
-            );
+            $total_pages = ( new self() )->extract_total_pages( $body );
             $page++;
         } while ( $page <= $total_pages );
 

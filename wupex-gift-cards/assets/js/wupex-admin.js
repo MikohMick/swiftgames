@@ -93,6 +93,85 @@
     });
 
     // -------------------------------------------------------------------------
+    // Import page: Load / Refresh Types
+    // -------------------------------------------------------------------------
+    $(document).on('click', '#wupex-load-types', function () {
+        var btn     = $(this);
+        var loading = $('#wupex-types-loading');
+
+        btn.prop('disabled', true);
+        loading.show();
+
+        $.post(wupexAdmin.ajax_url, {
+            action: 'wupex_fetch_types',
+            nonce:  wupexAdmin.nonce
+        }, null, 'json')
+        .done(function (resp) {
+            if (resp.success) {
+                window.location.reload();
+            } else {
+                loading.hide();
+                alert('Error: ' + (resp.data ? resp.data.message : 'Unknown error'));
+                btn.prop('disabled', false);
+            }
+        })
+        .fail(function () {
+            loading.hide();
+            alert('Request failed. Try again.');
+            btn.prop('disabled', false);
+        });
+    });
+
+    // -------------------------------------------------------------------------
+    // Import page: Toggle All Types
+    // -------------------------------------------------------------------------
+    $(document).on('change', '#wupex-toggle-all-types', function () {
+        $('.wupex-type-check').prop('checked', $(this).is(':checked'));
+    });
+
+    $(document).on('change', '.wupex-type-check', function () {
+        var total   = $('.wupex-type-check').length;
+        var checked = $('.wupex-type-check:checked').length;
+        $('#wupex-toggle-all-types').prop('indeterminate', checked > 0 && checked < total)
+                                    .prop('checked', checked === total);
+    });
+
+    // -------------------------------------------------------------------------
+    // Import page: Save Type Filter
+    // -------------------------------------------------------------------------
+    $(document).on('click', '#wupex-save-types', function () {
+        var btn    = $(this);
+        var result = $('#wupex-save-types-result');
+        var types  = [];
+
+        $('.wupex-type-check:checked').each(function () {
+            types.push($(this).val());
+        });
+
+        btn.prop('disabled', true).text('Saving…');
+        result.text('').css('color', '');
+
+        $.post(wupexAdmin.ajax_url, {
+            action: 'wupex_save_type_filter',
+            nonce:  wupexAdmin.nonce,
+            types:  types
+        })
+        .done(function (resp) {
+            if (resp.success) {
+                result.css('color', '#065f46').text('✔ ' + resp.data.message + ' Reloading…');
+                setTimeout(function () { window.location.reload(); }, 800);
+            } else {
+                result.css('color', '#991b1b').text('✖ ' + (resp.data ? resp.data.message : 'Error'));
+                btn.prop('disabled', false).text('Save Filter & Reload');
+            }
+        })
+        .fail(function () {
+            result.css('color', '#991b1b').text('✖ Request failed.');
+            btn.prop('disabled', false).text('Save Filter & Reload');
+        });
+    });
+
+    // -------------------------------------------------------------------------
     // Import page: Refresh Product List
     // -------------------------------------------------------------------------
     $(document).on('click', '#wupex-refresh-products', function () {
