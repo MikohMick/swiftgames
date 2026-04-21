@@ -515,6 +515,10 @@ class Wupex_Import {
                 ?? $response['data']['list']
                 ?? [];
 
+            if ( $page === 1 && empty( $items ) ) {
+                Wupex_API::log( 'STOCK_SYNC', 'No items found. Raw: ' . substr( wp_json_encode( $response['data'] ), 0, 600 ) );
+            }
+
             foreach ( $items as $item ) {
                 $sku       = $item['productCode'] ?? '';
                 $available = (int) ( $item['available'] ?? 0 );
