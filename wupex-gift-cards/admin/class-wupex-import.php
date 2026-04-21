@@ -115,15 +115,25 @@ class Wupex_Import {
 
             <?php else :
                 // ── STEP 3: Filter saved — load and show products ──
+                $search         = sanitize_text_field( wp_unslash( $_GET['s'] ?? '' ) );
                 $current_page   = max( 1, (int) ( $_GET['paged'] ?? 1 ) );
                 $all_products   = $this->get_cached_products();
+
+                // Filter by search term (name or SKU)
+                if ( $search !== '' ) {
+                    $lc = strtolower( $search );
+                    $all_products = array_values( array_filter( $all_products, function ( $p ) use ( $lc ) {
+                        return str_contains( strtolower( $p['productName'] ?? '' ), $lc )
+                            || str_contains( strtolower( $p['productCode'] ?? '' ), $lc );
+                    } ) );
+                }
                 $total          = count( $all_products );
                 $total_pages    = max( 1, (int) ceil( $total / self::PER_PAGE ) );
                 $current_page   = min( $current_page, $total_pages );
                 $offset         = ( $current_page - 1 ) * self::PER_PAGE;
                 $products       = array_slice( $all_products, $offset, self::PER_PAGE );
                 $markup         = (float) get_option( 'wupex_markup_percentage', 0 );
-                $base_url       = admin_url( 'admin.php?page=wupex-import' );
+                $base_url       = admin_url( 'admin.php?page=wupex-import' . ( $search !== '' ? '&s=' . rawurlencode( $search ) : '' ) );
 
                 $type_image_map = [];
                 foreach ( $all_products as $p ) {
@@ -140,6 +150,19 @@ class Wupex_Import {
                     <?php esc_html_e( 'Active filter:', 'wupex-gift-cards' ); ?>
                     <strong><?php echo esc_html( implode( ', ', $saved_types ) ); ?></strong>
                 </span>
+                <form method="get" action="" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                    <input type="hidden" name="page" value="wupex-import" />
+                    <input type="search" name="s" id="wupex-product-search"
+                           class="wupex-product-search"
+                           value="<?php echo esc_attr( $search ); ?>"
+                           placeholder="<?php esc_attr_e( 'Search products…', 'wupex-gift-cards' ); ?>" />
+                    <button type="submit" class="button"><?php esc_html_e( 'Search', 'wupex-gift-cards' ); ?></button>
+                    <?php if ( $search !== '' ) : ?>
+                        <a href="<?php echo esc_url( admin_url( 'admin.php?page=wupex-import' ) ); ?>" class="button button-link">
+                            <?php esc_html_e( 'Clear', 'wupex-gift-cards' ); ?>
+                        </a>
+                    <?php endif; ?>
+                </form>
                 <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                     <button type="button" id="wupex-change-filter" class="button button-secondary button-small">
                         <?php esc_html_e( 'Change Categories', 'wupex-gift-cards' ); ?>
