@@ -7,7 +7,9 @@ class Wupex_Import {
 
     private const PER_PAGE          = 20;
     private const CACHE_KEY         = 'wupex_product_cache';
-    private const CACHE_EXPIRY      = 300;          // 5 minutes
+    private const CACHE_EXPIRY      = 300;           // 5 minutes (filtered view)
+    private const ALL_CACHE_KEY     = 'wupex_all_product_cache';
+    private const ALL_CACHE_EXPIRY  = DAY_IN_SECONDS; // 24 hours (full catalog)
     private const TYPE_CACHE_KEY    = 'wupex_type_cache';
     private const TYPE_CACHE_EXPIRY = DAY_IN_SECONDS; // 24 hours
 
@@ -370,37 +372,28 @@ class Wupex_Import {
 
         @set_time_limit( 0 );
 
-        $api   = new Wupex_API();
+        // Fetch the full catalog using the working code path (pageSize=100, no filter)
+        delete_transient( self::ALL_CACHE_KEY );
+        $all = $this->fetch_all_products( false );
+
+        if ( empty( $all ) ) {
+            $err = $this->last_fetch_error ?: __( 'No products returned from API.', 'wupex-gift-cards' );
+            wp_send_json_error( [ 'message' => $err ] );
+            return;
+        }
+
+        // Derive types from the fetched products
         $types = [];
-        $page  = 1;
-
-        do {
-            $response = $api->get_products( $page, 200 );
-            if ( ! $response['success'] ) {
-                break;
-            }
-
-            $body  = $response['data'];
-            $items = $this->extract_items( $body );
-
-            foreach ( $items as $item ) {
-                if ( ! ( $item['enabled'] ?? true ) ) {
-                    continue;
-                }
-                $type = trim( $item['productType'] ?? '' );
-                if ( empty( $type ) ) {
-                    continue;
-                }
+        foreach ( $all as $item ) {
+            $type = trim( $item['productType'] ?? '' );
+            if ( $type !== '' ) {
                 $types[ $type ] = ( $types[ $type ] ?? 0 ) + 1;
             }
-
-            $total_pages = $this->extract_total_pages( $body );
-            $page++;
-        } while ( $page <= $total_pages );
-
+        }
         ksort( $types );
+
         set_transient( self::TYPE_CACHE_KEY, $types, self::TYPE_CACHE_EXPIRY );
-        Wupex_API::log( 'TYPE_FETCH', 'Discovered ' . count( $types ) . ' product types, ' . array_sum( $types ) . ' total products.' );
+        Wupex_API::log( 'TYPE_FETCH', 'Discovered ' . count( $types ) . ' types from ' . count( $all ) . ' products.' );
 
         wp_send_json_success( [ 'count' => count( $types ) ] );
     }
@@ -438,50 +431,76 @@ class Wupex_Import {
         if ( $cached !== false ) {
             return $cached;
         }
-        return $this->fetch_and_cache_all_products();
-    }
 
-    private function fetch_and_cache_all_products(): array {
-        $api           = new Wupex_API();
-        $results       = [];
-        $api_page      = 1;
         $allowed_types = (array) get_option( 'wupex_allowed_types', [] );
 
+        // Prefer filtering from the full catalog cache (no extra API call)
+        $all = get_transient( self::ALL_CACHE_KEY );
+        if ( $all !== false ) {
+            $filtered = empty( $allowed_types )
+                ? $all
+                : array_values( array_filter( $all, function ( $item ) use ( $allowed_types ) {
+                    return in_array( trim( $item['productType'] ?? '' ), $allowed_types, true );
+                } ) );
+            set_transient( self::CACHE_KEY, $filtered, self::CACHE_EXPIRY );
+            return $filtered;
+        }
+
+        // Fallback: fetch from API with filter applied
+        return $this->fetch_all_products( true );
+    }
+
+    /**
+     * Fetch all products from the API.
+     * $apply_type_filter=false  → full catalog, cached in ALL_CACHE_KEY (24 h)
+     * $apply_type_filter=true   → filtered by wupex_allowed_types, cached in CACHE_KEY (5 min)
+     */
+    private function fetch_all_products( bool $apply_type_filter = true ): array {
+        $cache_key    = $apply_type_filter ? self::CACHE_KEY    : self::ALL_CACHE_KEY;
+        $cache_expiry = $apply_type_filter ? self::CACHE_EXPIRY : self::ALL_CACHE_EXPIRY;
+
+        $cached = get_transient( $cache_key );
+        if ( $cached !== false ) {
+            return $cached;
+        }
+
+        $api           = new Wupex_API();
+        $results       = [];
+        $page          = 1;
+        $allowed_types = $apply_type_filter ? (array) get_option( 'wupex_allowed_types', [] ) : [];
+
         do {
-            $response = $api->get_products( $api_page, 100 );
+            $response = $api->get_products( $page, 100 );
 
             if ( ! $response['success'] ) {
                 $this->last_fetch_error = $response['error'] ?? 'Unknown API error';
-                Wupex_API::log( 'IMPORT_FETCH', 'API error: ' . $this->last_fetch_error );
+                Wupex_API::log( 'IMPORT_FETCH', 'API error page ' . $page . ': ' . $this->last_fetch_error );
                 break;
             }
 
             $body  = $response['data'];
             $items = $this->extract_items( $body );
 
-            if ( $api_page === 1 && empty( $items ) ) {
-                Wupex_API::log( 'IMPORT_FETCH', 'No items found. Raw: ' . substr( wp_json_encode( $body ), 0, 400 ) );
+            if ( $page === 1 && empty( $items ) ) {
+                Wupex_API::log( 'IMPORT_FETCH', 'Page 1 empty. Body: ' . substr( wp_json_encode( $body ), 0, 400 ) );
             }
 
             foreach ( $items as $item ) {
                 if ( ! ( $item['enabled'] ?? true ) ) {
                     continue;
                 }
-                if ( ! empty( $allowed_types ) ) {
-                    $type = trim( $item['productType'] ?? '' );
-                    if ( ! in_array( $type, $allowed_types, true ) ) {
-                        continue;
-                    }
+                if ( ! empty( $allowed_types ) && ! in_array( trim( $item['productType'] ?? '' ), $allowed_types, true ) ) {
+                    continue;
                 }
                 $results[] = $item;
             }
 
-            $total_api_pages = $this->extract_total_pages( $body );
-            $api_page++;
-        } while ( $api_page <= $total_api_pages );
+            $total_pages = $this->extract_total_pages( $body );
+            $page++;
+        } while ( $page <= $total_pages );
 
         if ( ! empty( $results ) ) {
-            set_transient( self::CACHE_KEY, $results, self::CACHE_EXPIRY );
+            set_transient( $cache_key, $results, $cache_expiry );
         }
 
         return $results;
@@ -499,6 +518,7 @@ class Wupex_Import {
         }
 
         delete_transient( self::CACHE_KEY );
+        delete_transient( self::ALL_CACHE_KEY );
         wp_send_json_success( [ 'message' => __( 'Product list refreshed. Reloading…', 'wupex-gift-cards' ) ] );
     }
 
