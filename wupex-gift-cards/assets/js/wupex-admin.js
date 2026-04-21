@@ -123,6 +123,17 @@
     });
 
     // -------------------------------------------------------------------------
+    // Import page: Search / filter category list
+    // -------------------------------------------------------------------------
+    $(document).on('input', '#wupex-type-search', function () {
+        var q = $(this).val().toLowerCase().trim();
+        $('.wupex-type-item').each(function () {
+            var label = $(this).text().toLowerCase();
+            $(this).toggle(q === '' || label.indexOf(q) !== -1);
+        });
+    });
+
+    // -------------------------------------------------------------------------
     // Import page: Toggle All Types
     // -------------------------------------------------------------------------
     $(document).on('change', '#wupex-toggle-all-types', function () {

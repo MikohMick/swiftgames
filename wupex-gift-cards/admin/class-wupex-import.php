@@ -54,7 +54,6 @@ class Wupex_Import {
             <?php if ( ! $cached_types ) : ?>
             <!-- ── STEP 1: No types loaded yet ── -->
             <div class="wupex-setup-card">
-                <div class="wupex-setup-step">1</div>
                 <div class="wupex-setup-body">
                     <h2><?php esc_html_e( 'Load Product Categories', 'wupex-gift-cards' ); ?></h2>
                     <p><?php esc_html_e( 'First, fetch all available product categories from Wupex. This takes about 30 seconds and is cached for 24 hours.', 'wupex-gift-cards' ); ?></p>
@@ -71,13 +70,16 @@ class Wupex_Import {
             <?php elseif ( ! $filter_ready ) : ?>
             <!-- ── STEP 2: Types loaded, pick categories ── -->
             <div class="wupex-setup-card">
-                <div class="wupex-setup-step">2</div>
                 <div class="wupex-setup-body">
                     <h2><?php esc_html_e( 'Select Categories to Import', 'wupex-gift-cards' ); ?></h2>
                     <p><?php printf(
                         esc_html__( '%d categories found. Tick the ones you want, then click Save.', 'wupex-gift-cards' ),
                         count( $cached_types )
                     ); ?></p>
+
+                    <input type="text" id="wupex-type-search"
+                           class="wupex-type-search"
+                           placeholder="<?php esc_attr_e( 'Search categories…', 'wupex-gift-cards' ); ?>" />
 
                     <div class="wupex-type-grid">
                         <label class="wupex-type-select-all">
