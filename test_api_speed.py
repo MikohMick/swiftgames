@@ -121,62 +121,53 @@ def run_tests() -> list[dict]:
 
             if error:
                 results.append({
-                    "env":         env_name,
-                    "endpoint":    ep["name"],
-                    "http_code":   "ERR",
-                    "min_ms":      "-",
-                    "avg_ms":      "-",
-                    "max_ms":      "-",
-                    "dns_ms":      "-",
-                    "tls_ms":      "-",
-                    "ttfb_ms":     "-",
-                    "status":      f"ERROR: {error}",
+                    "env":      env_name,
+                    "endpoint": ep["name"],
+                    "avg_ms":   "-",
+                    "status":   "Error ❌",
                 })
             else:
+                avg = statistics.mean(timings)
                 results.append({
-                    "env":         env_name,
-                    "endpoint":    ep["name"],
-                    "http_code":   http_code,
-                    "min_ms":      f"{min(timings):.0f}",
-                    "avg_ms":      f"{statistics.mean(timings):.0f}",
-                    "max_ms":      f"{max(timings):.0f}",
-                    "dns_ms":      f"{last['dns_ms']:.0f}",
-                    "tls_ms":      f"{last['tls_ms']:.0f}",
-                    "ttfb_ms":     f"{last['ttfb_ms']:.0f}",
-                    "status":      speed_rating(statistics.mean(timings)),
+                    "env":      env_name,
+                    "endpoint": ep["name"],
+                    "avg_ms":   f"{avg:.0f}",
+                    "status":   speed_rating(avg),
                 })
     return results
 
 
 def speed_rating(avg_ms: float) -> str:
     if avg_ms < 300:
-        return "Fast"
+        return "Fast ✅"
     if avg_ms < 800:
-        return "OK"
+        return "OK ⚠️"
     if avg_ms < 1500:
-        return "Slow"
-    return "Very Slow"
+        return "Slow ❌"
+    return "Very Slow ❌"
 
 
 def print_table(results: list[dict]) -> None:
+    # Simple friendly names for endpoints
+    friendly = {
+        "GET  /api/customer/balance":              "Check Balance",
+        "POST /api/product/merchant/invited/list": "List Products",
+        "POST /api/order/pull-codes":              "Pull Order Codes",
+        "GET  /api/order/detail":                  "Get Order Detail",
+    }
+
     cols = [
-        ("Environment",  "env",       14),
-        ("Endpoint",     "endpoint",  44),
-        ("HTTP",         "http_code",  6),
-        ("Min (ms)",     "min_ms",     9),
-        ("Avg (ms)",     "avg_ms",     9),
-        ("Max (ms)",     "max_ms",     9),
-        ("DNS (ms)",     "dns_ms",     9),
-        ("TLS (ms)",     "tls_ms",     9),
-        ("TTFB (ms)",    "ttfb_ms",   10),
-        ("Rating",       "status",    10),
+        ("Where",    "env",      12),
+        ("What",     "label",    18),
+        ("Speed",    "avg_ms",    9),
+        ("Result",   "status",   12),
     ]
 
-    sep   = "+" + "+".join("-" * (w + 2) for _, _, w in cols) + "+"
+    sep    = "+" + "+".join("-" * (w + 2) for _, _, w in cols) + "+"
     header = "|" + "|".join(f" {h:<{w}} " for h, _, w in cols) + "|"
 
     print()
-    print(f"  Wupex API Speed Test — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  ({RUNS} runs per endpoint)")
+    print(f"  Wupex API Speed Test  —  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
     print(sep)
     print(header)
@@ -187,20 +178,19 @@ def print_table(results: list[dict]) -> None:
         if prev_env and row["env"] != prev_env:
             print(sep)
         prev_env = row["env"]
-        line = "|" + "|".join(
-            f" {str(row[k]):<{w}} " for _, k, w in cols
-        ) + "|"
+        display = {
+            "env":    row["env"],
+            "label":  friendly.get(row["endpoint"], row["endpoint"]),
+            "avg_ms": f"{row['avg_ms']} ms" if row["avg_ms"] != "-" else "-",
+            "status": row["status"],
+        }
+        line = "|" + "|".join(f" {str(display[k]):<{w}} " for _, k, w in cols) + "|"
         print(line)
 
     print(sep)
     print()
-    print("  Timing breakdown (last run only):")
-    print("    DNS   = DNS name lookup time")
-    print("    TLS   = TLS/SSL handshake time (0 = reused connection)")
-    print("    TTFB  = Time to first byte (server processing + network)")
-    print("    Avg   = Average total response time across all runs")
-    print()
-    print("  Speed ratings: Fast <300ms | OK 300-800ms | Slow 800-1500ms | Very Slow >1500ms")
+    print("  Speed = average response time over 3 test runs")
+    print("  Fast ✅ = under 300ms  |  OK ⚠️ = under 800ms  |  Slow/Very Slow ❌ = 800ms+")
     print()
 
 
