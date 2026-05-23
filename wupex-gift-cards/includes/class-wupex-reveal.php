@@ -71,14 +71,6 @@ class Wupex_Reveal {
     // -------------------------------------------------------------------------
 
     private function render_reveal( string $token ): string {
-        // Must be logged in
-        if ( ! is_user_logged_in() ) {
-            $login_url = wp_login_url( add_query_arg( 'token', $token, get_permalink() ) );
-            return '<div class="wupex-reveal-error"><p>'
-                . esc_html__( 'You must be logged in to reveal your code.', 'wupex-gift-cards' )
-                . ' <a href="' . esc_url( $login_url ) . '">' . esc_html__( 'Log in', 'wupex-gift-cards' ) . '</a></p></div>';
-        }
-
         $code = Wupex_DB::get_code_by_token( $token );
 
         // Token does not exist
@@ -91,9 +83,13 @@ class Wupex_Reveal {
             return $this->error_message( __( 'This code has been refunded and is no longer available.', 'wupex-gift-cards' ) );
         }
 
-        // Verify the order belongs to the logged-in customer
         $order = wc_get_order( (int) $code['wc_order_id'] );
-        if ( ! $order || (int) $order->get_customer_id() !== (int) get_current_user_id() ) {
+        if ( ! $order ) {
+            return $this->error_message( __( 'Invalid reveal link. Please check your email or contact support.', 'wupex-gift-cards' ) );
+        }
+
+        // If a customer is logged in, verify the order belongs to them
+        if ( is_user_logged_in() && $order->get_customer_id() > 0 && (int) $order->get_customer_id() !== (int) get_current_user_id() ) {
             return $this->error_message( __( 'This reveal link does not belong to your account.', 'wupex-gift-cards' ) );
         }
 
