@@ -7,9 +7,10 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-$site_name  = get_bloginfo( 'name' );
-$logo_url   = get_site_icon_url( 60 );
-$first_name = $order->get_billing_first_name();
+$site_name     = get_bloginfo( 'name' );
+$logo_url      = get_site_icon_url( 60 );
+$first_name    = $order->get_billing_first_name();
+$primary_color = get_option( 'woocommerce_email_base_color', '#7c3aed' );
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -20,12 +21,12 @@ $first_name = $order->get_billing_first_name();
     <style>
         body { margin: 0; padding: 0; background: #f7f7f7; font-family: Arial, sans-serif; color: #333; }
         .email-wrap { max-width: 600px; margin: 40px auto; background: #fff; border: 1px solid #e0e0e0; border-radius: 4px; overflow: hidden; }
-        .email-header { background: #7c3aed; padding: 30px 40px; text-align: center; }
+        .email-header { background: <?php echo esc_attr( $primary_color ); ?>; padding: 30px 40px; text-align: center; }
         .email-header h1 { color: #fff; margin: 0; font-size: 24px; }
         .email-body { padding: 40px; }
         .email-body p { line-height: 1.6; margin: 0 0 16px; }
         .btn-wrap { text-align: center; margin: 30px 0; }
-        .btn-reveal { display: inline-block; background: #7c3aed; color: #fff !important; text-decoration: none; padding: 14px 36px; border-radius: 4px; font-size: 16px; font-weight: bold; }
+        .btn-reveal { display: inline-block; background: <?php echo esc_attr( $primary_color ); ?>; color: #fff !important; text-decoration: none; padding: 14px 36px; border-radius: 4px; font-size: 16px; font-weight: bold; }
         .order-info { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 4px; padding: 16px; margin: 20px 0; font-size: 14px; }
         .email-footer { background: #f7f7f7; border-top: 1px solid #e0e0e0; padding: 20px 40px; text-align: center; font-size: 12px; color: #888; }
     </style>

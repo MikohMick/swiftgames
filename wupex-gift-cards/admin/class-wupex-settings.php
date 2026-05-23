@@ -281,7 +281,14 @@ class Wupex_Settings {
             'From: ' . $from_name . ' <' . $from_email . '>',
         ];
 
+        // Force sender via PHPMailer at priority 99 to override any host-level SMTP defaults (e.g. EasyWP)
+        $force_sender = static function ( $phpmailer ) use ( $from_name, $from_email ) {
+            $phpmailer->FromName = $from_name;
+            $phpmailer->From     = $from_email;
+        };
+        add_action( 'phpmailer_init', $force_sender, 99 );
         $sent = wp_mail( $to, $subject, $content, $headers );
+        remove_action( 'phpmailer_init', $force_sender, 99 );
 
         if ( $sent ) {
             Wupex_API::log( 'TEST_EMAIL', "Test email sent to {$to}" );
