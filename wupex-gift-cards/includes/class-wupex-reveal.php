@@ -46,12 +46,79 @@ class Wupex_Reveal {
             return;
         }
 
-        // Load inside the full theme (calls wp_head → wp_enqueue_scripts → our CSS).
         status_header( 200 );
-        get_header();
-        echo $this->render_reveal( $token ); // phpcs:ignore WordPress.Security.EscapeOutput
-        get_footer();
+        $content = $this->render_reveal( $token );
+        $this->render_standalone_page( $content );
         exit;
+    }
+
+    private function render_standalone_page( string $content ): void {
+        $css_url   = WUPEX_PLUGIN_URL . 'assets/css/wupex-reveal.css?v=' . WUPEX_VERSION;
+        $home_url  = home_url( '/' );
+        $site_name = get_bloginfo( 'name' );
+        ?>
+<!DOCTYPE html>
+<html <?php language_attributes(); ?>>
+<head>
+    <meta charset="<?php bloginfo( 'charset' ); ?>">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><?php echo esc_html__( 'Your Gift Card Code', 'wupex-gift-cards' ) . ' — ' . esc_html( $site_name ); ?></title>
+    <link rel="stylesheet" href="<?php echo esc_url( $css_url ); ?>">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d0d0d;
+            color: #111827;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .wupex-standalone-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 48px 16px 24px;
+        }
+        .wupex-standalone-footer {
+            text-align: center;
+            padding: 20px 16px 48px;
+        }
+        .wupex-back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255,255,255,.65);
+            border: 1px solid rgba(255,255,255,.2);
+            border-radius: 8px;
+            padding: 12px 28px;
+            font-size: 15px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: color .18s, border-color .18s, background .18s;
+        }
+        .wupex-back-btn:hover {
+            color: #fff;
+            border-color: rgba(255,255,255,.45);
+            background: rgba(255,255,255,.05);
+        }
+    </style>
+</head>
+<body>
+    <div class="wupex-standalone-wrap">
+        <?php echo $content; // phpcs:ignore WordPress.Security.EscapeOutput ?>
+    </div>
+    <div class="wupex-standalone-footer">
+        <a href="<?php echo esc_url( $home_url ); ?>" class="wupex-back-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            <?php esc_html_e( 'Back to Home', 'wupex-gift-cards' ); ?>
+        </a>
+    </div>
+</body>
+</html>
+        <?php
     }
 
     // -------------------------------------------------------------------------
