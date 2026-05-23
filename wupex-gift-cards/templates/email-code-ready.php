@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 $site_name     = get_bloginfo( 'name' );
-$logo_url      = get_site_icon_url( 60 );
+$logo_url      = get_option( 'woocommerce_email_header_image', get_site_icon_url( 60 ) );
 $first_name    = $order->get_billing_first_name();
 $primary_color = get_option( 'woocommerce_email_base_color', '#7c3aed' );
 ?>
@@ -35,7 +35,7 @@ $primary_color = get_option( 'woocommerce_email_base_color', '#7c3aed' );
 <div class="email-wrap">
     <div class="email-header">
         <?php if ( $logo_url ) : ?>
-            <img src="<?php echo esc_url( $logo_url ); ?>" width="60" height="60" alt="<?php echo esc_attr( $site_name ); ?>" style="margin-bottom:10px;" />
+            <img src="<?php echo esc_url( $logo_url ); ?>" alt="<?php echo esc_attr( $site_name ); ?>" style="max-width:200px; height:auto; display:block; margin:0 auto 12px;" />
         <?php endif; ?>
         <h1><?php echo esc_html( $site_name ); ?></h1>
     </div>
