@@ -35,9 +35,8 @@ $primary_color = get_option( 'woocommerce_email_base_color', '#7c3aed' );
 <div class="email-wrap">
     <div class="email-header">
         <?php if ( $logo_url ) : ?>
-            <img src="<?php echo esc_url( $logo_url ); ?>" alt="<?php echo esc_attr( $site_name ); ?>" style="max-width:200px; height:auto; display:block; margin:0 auto 12px;" />
+            <img src="<?php echo esc_url( $logo_url ); ?>" alt="<?php echo esc_attr( $site_name ); ?>" style="max-width:200px; height:auto; display:block; margin:0 auto;" />
         <?php endif; ?>
-        <h1><?php echo esc_html( $site_name ); ?></h1>
     </div>
 
     <div class="email-body">
