@@ -52,9 +52,11 @@ function wupex_init(): void {
     if ( is_admin() ) {
         require_once WUPEX_PLUGIN_DIR . 'admin/class-wupex-settings.php';
         require_once WUPEX_PLUGIN_DIR . 'admin/class-wupex-import.php';
+        require_once WUPEX_PLUGIN_DIR . 'admin/class-wupex-products.php';
         require_once WUPEX_PLUGIN_DIR . 'admin/class-wupex-order-meta.php';
         new Wupex_Settings();
         new Wupex_Import();
+        new Wupex_Products();
         new Wupex_Order_Meta();
     }
 

@@ -15,6 +15,23 @@ class Wupex_Import {
 
     private string $last_fetch_error = '';
 
+    /** Extract face/denomination value from API data or product name. */
+    private function extract_face_value( array $product ): float {
+        foreach ( [ 'faceValue', 'denominationValue', 'denomination', 'faceAmount', 'value' ] as $field ) {
+            if ( isset( $product[ $field ] ) && (float) $product[ $field ] > 0 ) {
+                return (float) $product[ $field ];
+            }
+        }
+        $name = $product['productName'] ?? '';
+        if ( preg_match( '/\$\s*([\d,]+(?:\.\d+)?)/', $name, $m ) ) {
+            $val = (float) str_replace( ',', '', $m[1] );
+            if ( $val > 0 ) {
+                return $val;
+            }
+        }
+        return 0.0;
+    }
+
     public function __construct() {
         add_action( 'admin_menu', [ $this, 'register_submenu' ] );
         add_action( 'wp_ajax_wupex_import_products',   [ $this, 'ajax_import_products' ] );
@@ -215,18 +232,27 @@ class Wupex_Import {
                                 </td>
                                 <th style="width:64px;"><?php esc_html_e( 'Image', 'wupex-gift-cards' ); ?></th>
                                 <th><?php esc_html_e( 'Product Name', 'wupex-gift-cards' ); ?></th>
-                                <th style="width:155px;"><?php esc_html_e( 'SKU', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:140px;"><?php esc_html_e( 'SKU', 'wupex-gift-cards' ); ?></th>
                                 <th style="width:100px;"><?php esc_html_e( 'Wupex Price', 'wupex-gift-cards' ); ?></th>
-                                <th style="width:120px;"><?php esc_html_e( 'WC Price (+markup)', 'wupex-gift-cards' ); ?></th>
-                                <th style="width:65px;"><?php esc_html_e( 'Stock', 'wupex-gift-cards' ); ?></th>
-                                <th style="width:115px;"><?php esc_html_e( 'Type', 'wupex-gift-cards' ); ?></th>
-                                <th style="width:105px;"><?php esc_html_e( 'Status', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:85px;" title="<?php esc_attr_e( 'Discount from face/retail value', 'wupex-gift-cards' ); ?>"><?php esc_html_e( 'Discount', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:140px;"><?php esc_html_e( 'WC Price (+markup)', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:80px;" title="<?php esc_attr_e( 'Profit over Wupex cost', 'wupex-gift-cards' ); ?>"><?php esc_html_e( '% Profit', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:55px;"><?php esc_html_e( 'Stock', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:105px;"><?php esc_html_e( 'Type', 'wupex-gift-cards' ); ?></th>
+                                <th style="width:95px;"><?php esc_html_e( 'Status', 'wupex-gift-cards' ); ?></th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ( $products as $product ) :
                                 $wupex_price  = (float) ( $product['retailPrice'] ?? $product['price'] ?? 0 );
                                 $wc_price     = round( $wupex_price + ( $wupex_price * $markup / 100 ), 2 );
+                                $face_value   = $this->extract_face_value( $product );
+                                $discount_pct = ( $face_value > 0 && $wupex_price < $face_value )
+                                                ? round( ( $face_value - $wupex_price ) / $face_value * 100, 1 )
+                                                : null;
+                                $profit_pct   = $wupex_price > 0
+                                                ? round( ( $wc_price - $wupex_price ) / $wupex_price * 100, 1 )
+                                                : 0;
                                 $sku          = $product['productCode'] ?? '';
                                 $imported     = $this->is_already_imported( $sku );
                                 $type         = $product['productType'] ?? '';
@@ -256,7 +282,25 @@ class Wupex_Import {
                                 <td><?php echo esc_html( $product['productName'] ?? '' ); ?></td>
                                 <td><code><?php echo esc_html( $sku ); ?></code></td>
                                 <td><?php echo wp_kses_post( wc_price( $wupex_price ) ); ?></td>
-                                <td><?php echo wp_kses_post( wc_price( $wc_price ) ); ?></td>
+                                <td>
+                                    <?php if ( $discount_pct !== null ) : ?>
+                                        <span class="wupex-discount-badge"><?php echo esc_html( $discount_pct ); ?>% off</span>
+                                    <?php else : ?>
+                                        <span class="wupex-na">—</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <input type="number"
+                                           class="wupex-price-override"
+                                           data-sku="<?php echo esc_attr( $sku ); ?>"
+                                           data-wupex-price="<?php echo esc_attr( $wupex_price ); ?>"
+                                           value="<?php echo esc_attr( $wc_price ); ?>"
+                                           min="0" step="0.01"
+                                           style="width:95px;" />
+                                </td>
+                                <td class="wupex-profit-cell" data-sku="<?php echo esc_attr( $sku ); ?>">
+                                    <?php echo esc_html( $profit_pct ); ?>%
+                                </td>
                                 <td><?php echo esc_html( $product['available'] ?? 0 ); ?></td>
                                 <td><?php echo esc_html( $type ); ?></td>
                                 <td>
@@ -282,7 +326,9 @@ class Wupex_Import {
                                 <th><?php esc_html_e( 'Product Name', 'wupex-gift-cards' ); ?></th>
                                 <th><?php esc_html_e( 'SKU', 'wupex-gift-cards' ); ?></th>
                                 <th><?php esc_html_e( 'Wupex Price', 'wupex-gift-cards' ); ?></th>
+                                <th><?php esc_html_e( 'Discount', 'wupex-gift-cards' ); ?></th>
                                 <th><?php esc_html_e( 'WC Price (+markup)', 'wupex-gift-cards' ); ?></th>
+                                <th><?php esc_html_e( '% Profit', 'wupex-gift-cards' ); ?></th>
                                 <th><?php esc_html_e( 'Stock', 'wupex-gift-cards' ); ?></th>
                                 <th><?php esc_html_e( 'Type', 'wupex-gift-cards' ); ?></th>
                                 <th><?php esc_html_e( 'Status', 'wupex-gift-cards' ); ?></th>
@@ -630,7 +676,9 @@ class Wupex_Import {
 
         $markup      = (float) get_option( 'wupex_markup_percentage', 0 );
         $wupex_price = (float) ( $data['retailPrice'] ?? $data['price'] ?? 0 );
-        $wc_price    = round( $wupex_price + ( $wupex_price * $markup / 100 ), 2 );
+        $wc_price    = isset( $data['_custom_price'] ) && (float) $data['_custom_price'] >= 0
+                       ? round( (float) $data['_custom_price'], 2 )
+                       : round( $wupex_price + ( $wupex_price * $markup / 100 ), 2 );
         $available   = (int) ( $data['available'] ?? 0 );
 
         $product = new WC_Product_Simple();

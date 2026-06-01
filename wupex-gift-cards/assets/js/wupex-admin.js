@@ -210,6 +210,19 @@
     });
 
     // -------------------------------------------------------------------------
+    // Import page: Live profit recalculation on WC price override change
+    // -------------------------------------------------------------------------
+    $(document).on('input', '.wupex-price-override', function () {
+        var sku        = $(this).data('sku');
+        var wupexPrice = parseFloat($(this).data('wupex-price')) || 0;
+        var wcPrice    = parseFloat($(this).val()) || 0;
+        var profitPct  = wupexPrice > 0
+            ? ((wcPrice - wupexPrice) / wupexPrice * 100).toFixed(1)
+            : '0.0';
+        $('.wupex-profit-cell[data-sku="' + sku + '"]').text(profitPct + '%');
+    });
+
+    // -------------------------------------------------------------------------
     // Import page: Import Selected
     // -------------------------------------------------------------------------
     $(document).on('click', '#wupex-import-selected', function () {
@@ -230,8 +243,21 @@
         progress.show();
         summary.hide().html('');
 
+        // Build products array, injecting any custom WC price overrides
         var products = [];
-        selected.each(function () { products.push($(this).val()); });
+        selected.each(function () {
+            var data = {};
+            try { data = JSON.parse($(this).val()); } catch (e) { return; }
+            var sku      = data.productCode || '';
+            var override = $('.wupex-price-override[data-sku="' + sku + '"]');
+            if (override.length) {
+                var customPrice = parseFloat(override.val());
+                if (!isNaN(customPrice) && customPrice >= 0) {
+                    data._custom_price = customPrice;
+                }
+            }
+            products.push(JSON.stringify(data));
+        });
 
         // Simulate chunked progress (one batch in this implementation)
         fill.css('width', '30%');
@@ -320,6 +346,57 @@
         })
         .always(function () {
             btn.prop('disabled', false).text('Sync Stock');
+        });
+    });
+
+    // -------------------------------------------------------------------------
+    // Imported Products page: live profit recalculation
+    // -------------------------------------------------------------------------
+    $(document).on('input', '.wupex-product-price-input', function () {
+        var productId  = $(this).data('product-id');
+        var wupexPrice = parseFloat($(this).data('wupex-price')) || 0;
+        var wcPrice    = parseFloat($(this).val()) || 0;
+        var profitPct  = wupexPrice > 0
+            ? ((wcPrice - wupexPrice) / wupexPrice * 100).toFixed(1)
+            : '0.0';
+        var cell  = $('.wupex-product-profit-cell[data-product-id="' + productId + '"]');
+        var span  = cell.find('span');
+        span.text(profitPct + '%')
+            .removeClass('wupex-profit-positive wupex-profit-negative')
+            .addClass(parseFloat(profitPct) >= 0 ? 'wupex-profit-positive' : 'wupex-profit-negative');
+    });
+
+    // -------------------------------------------------------------------------
+    // Imported Products page: update price via AJAX
+    // -------------------------------------------------------------------------
+    $(document).on('click', '.wupex-update-product-price', function () {
+        var btn       = $(this);
+        var productId = btn.data('product-id');
+        var price     = $('.wupex-product-price-input[data-product-id="' + productId + '"]').val();
+        var result    = $('.wupex-update-result[data-product-id="' + productId + '"]');
+
+        btn.prop('disabled', true).text('Updating…');
+        result.text('').css('color', '');
+
+        $.post(wupexAdmin.ajax_url, {
+            action:     'wupex_update_product_price',
+            nonce:      wupexAdmin.nonce,
+            product_id: productId,
+            price:      price
+        })
+        .done(function (resp) {
+            if (resp.success) {
+                result.css('color', '#065f46').text('✔ Saved');
+                setTimeout(function () { result.text(''); }, 3000);
+            } else {
+                result.css('color', '#991b1b').text('✖ ' + (resp.data ? resp.data.message : 'Error'));
+            }
+        })
+        .fail(function () {
+            result.css('color', '#991b1b').text('✖ Request failed.');
+        })
+        .always(function () {
+            btn.prop('disabled', false).text('Update');
         });
     });
 

@@ -201,4 +201,77 @@
     font-style: italic;
 }
 
+/* Discount badge (import table + products page) */
+.wupex-discount-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    background: #dbeafe;
+    color: #1e40af;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.wupex-na {
+    color: #9ca3af;
+    font-size: 13px;
+}
+
+/* Price override input (import table) */
+.wupex-price-override {
+    border: 1px solid #dcdcde;
+    border-radius: 3px;
+    padding: 3px 6px;
+    font-size: 13px;
+    background: #fffbeb;
+    transition: border-color 0.15s;
+}
+
+.wupex-price-override:focus {
+    border-color: #7c3aed;
+    background: #fff;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(124,58,237,0.15);
+}
+
+/* Profit percentage colours */
+.wupex-profit-positive {
+    color: #065f46;
+    font-weight: 600;
+}
+
+.wupex-profit-negative {
+    color: #991b1b;
+    font-weight: 600;
+}
+
+/* Imported Products page */
+.wupex-products-wrap .wupex-products-table th,
+.wupex-products-wrap .wupex-products-table td {
+    vertical-align: middle;
+}
+
+.wupex-product-price-input {
+    border: 1px solid #dcdcde;
+    border-radius: 3px;
+    padding: 3px 6px;
+    font-size: 13px;
+    background: #fffbeb;
+    transition: border-color 0.15s;
+}
+
+.wupex-product-price-input:focus {
+    border-color: #7c3aed;
+    background: #fff;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(124,58,237,0.15);
+}
+
+.wupex-update-result {
+    font-size: 12px;
+    margin-left: 6px;
+    font-style: italic;
+}
+
 /* Reveal page styles are in assets/css/wupex-reveal.css (frontend only) */
